@@ -1,0 +1,18 @@
+@page "/venta"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+
+<PageTitle>Venta - SuperM</PageTitle>
+
+<div style="padding: 1rem;">
+    <h1>Pantalla de venta</h1>
+    <p style="color:#52606d">Componente placeholder. La UI real se agrega en los siguientes commits.</p>
+
+    <AuthorizeView>
+        <Authorized>
+            <p>Cajero autenticado: <strong>@context.User.Identity?.Name</strong>
+               (rol: @context.User.FindFirst(ClaimTypes.Role)?.Value)</p>
+        </Authorized>
+    </AuthorizeView>
+</div>

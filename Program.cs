@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Localization;
 using Serilog;
 using SuperMWeb.Api;
@@ -29,6 +30,7 @@ builder.Services.AddSingleton(new SqlConnectionFactory(connectionString));
 
 builder.Services.AddScoped<IProductosRepository, ProductosRepository>();
 builder.Services.AddScoped<IVentasRepository, VentasRepository>();
+builder.Services.AddScoped<IUsuariosRepository, UsuariosRepository>();
 
 // ITicketPrinter: seleccionable por config Printer:Tipo (Local o Null).
 // Null se usa en Development sin hardware y en tests HTTP.
@@ -49,6 +51,27 @@ else
     throw new PlatformNotSupportedException(
         "Printer:Tipo=Local solo esta soportado en Windows. Use 'Null' en otras plataformas.");
 }
+
+// ---------- Autenticacion (cookie) ----------
+
+// Cookie de sesion contra la tabla Usuarios. Vive mientras dure el navegador
+// o hasta cerrar sesion; sin sliding expiration porque la caja no cierra
+// dentro de una jornada.
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/login";
+        options.LogoutPath = "/logout";
+        options.AccessDeniedPath = "/login";
+        options.ExpireTimeSpan = TimeSpan.FromHours(12);
+        options.SlidingExpiration = true;
+        options.Cookie.Name = "supermweb.auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+    });
+builder.Services.AddAuthorization();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddHttpContextAccessor(); // requerido por Login.razor para generar token antiforgery en SSR
 
 // ---------- Blazor Server ----------
 
@@ -96,6 +119,8 @@ else
 // No hay HTTPS: mismo host, contexto seguro por localhost (prompt).
 // app.UseHttpsRedirection() eliminado a proposito.
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
@@ -103,6 +128,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapVentaEndpoints();
+app.MapAuthEndpoints();
 app.MapHealthChecks("/health");
 
 app.Run();

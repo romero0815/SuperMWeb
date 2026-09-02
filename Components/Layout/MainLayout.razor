@@ -1,23 +1,49 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Antiforgery
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Configuration
+@inject IConfiguration Config
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor Http
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+<div class="kiosk-shell">
+    <header class="kiosk-header">
+        <div class="brand">@_negocio</div>
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
+        <AuthorizeView>
+            <Authorized>
+                <div class="user-block">
+                    <span>Cajero: <strong>@context.User.FindFirst("nombre")?.Value</strong></span>
+                    <form method="post" action="/logout" style="display:inline">
+                        <input type="hidden" name="__RequestVerificationToken" value="@_logoutToken" />
+                        <button type="submit" class="logout-btn">Cerrar sesion</button>
+                    </form>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </header>
 
-        <article class="content px-4">
-            @Body
-        </article>
+    <main class="kiosk-content">
+        @Body
     </main>
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    Ocurrio un error inesperado.
+    <a href="." class="reload">Recargar</a>
 </div>
+
+@code {
+    private string _negocio = "SuperM";
+    private string _logoutToken = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        _negocio = Config["Negocio:Nombre"] ?? "SuperM";
+        var http = Http.HttpContext;
+        if (http is not null)
+        {
+            _logoutToken = Antiforgery.GetAndStoreTokens(http).RequestToken ?? string.Empty;
+        }
+    }
+}
