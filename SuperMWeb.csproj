@@ -1,10 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <ItemGroup>
+    <ProjectReference Include="SuperMWeb.Domain\SuperMWeb.Domain.csproj" />
+    <ProjectReference Include="SuperMWeb.Application\SuperMWeb.Application.csproj" />
+    <ProjectReference Include="SuperMWeb.Infrastructure\SuperMWeb.Infrastructure.csproj" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <DefaultItemExcludes>$(DefaultItemExcludes);SuperMWeb.Domain\**;SuperMWeb.Application\**;SuperMWeb.Infrastructure\**;SuperMWeb.Domain.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
 </Project>
