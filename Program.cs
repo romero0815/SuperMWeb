@@ -9,7 +9,21 @@ using SuperMWeb.Infrastructure.Data;
 using SuperMWeb.Infrastructure.Printers;
 
 // Serilog leido desde appsettings.json (Serilog seccion).
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    // Cuando corre como servicio Windows, el cwd es System32 (heredado del SCM);
+    // fijamos ContentRoot al directorio del binario para que encuentre
+    // appsettings.json y demas archivos.
+    ContentRootPath = AppContext.BaseDirectory
+});
+
+// Habilita el hosting como servicio Windows. Solo tiene efecto cuando el
+// proceso arranca via SCM (sc start); si no, es un no-op.
+builder.Host.UseWindowsService(options =>
+{
+    options.ServiceName = "SuperMWeb";
+});
 
 builder.Host.UseSerilog((context, cfg) => cfg.ReadFrom.Configuration(context.Configuration));
 
