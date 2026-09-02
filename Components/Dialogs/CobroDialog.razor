@@ -1,0 +1,96 @@
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+
+<div class="modal-backdrop" @onclick="Cancelar" @onclick:stopPropagation="true">
+    <div class="modal" @onclick:stopPropagation="true" @onkeydown="OnKey">
+        <h2>Cobrar venta</h2>
+
+        <div class="resumen">
+            <div class="fila total-fila">
+                <span>Total a cobrar</span>
+                <span>@Total.ToString("C0")</span>
+            </div>
+        </div>
+
+        <div class="campo">
+            <label for="txtRecibido">Dinero recibido</label>
+            <input id="txtRecibido"
+                   type="text"
+                   inputmode="numeric"
+                   @bind="_recibidoTexto"
+                   @bind:event="oninput"
+                   autocomplete="off" />
+        </div>
+
+        @{
+            var recibido = ParseDinero(_recibidoTexto);
+            var cambio = recibido - Total;
+            var cls = cambio < 0 ? "cambio negativo" : "cambio";
+        }
+
+        <div class="@cls">
+            @if (cambio < 0)
+            {
+                <span>Faltan @((-cambio).ToString("C0"))</span>
+            }
+            else
+            {
+                <span>Cambio: @cambio.ToString("C0")</span>
+            }
+        </div>
+
+        <div class="acciones">
+            <button class="btn-secondary" @onclick="Cancelar">Cancelar (Esc)</button>
+            <button class="btn-primary" disabled="@(recibido < Total)" @onclick="Confirmar">
+                Confirmar (Enter)
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public decimal Total { get; set; }
+    [Parameter] public EventCallback<decimal> OnConfirmar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private string _recibidoTexto = string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("eval", "setTimeout(() => document.getElementById('txtRecibido')?.focus(), 30)");
+        }
+    }
+
+    private static decimal ParseDinero(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return 0m;
+        var limpio = new string(s.Where(c => char.IsDigit(c) || c == ',' || c == '.').ToArray());
+        if (decimal.TryParse(limpio, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out var d))
+            return d;
+        return 0m;
+    }
+
+    private async Task Confirmar()
+    {
+        var recibido = ParseDinero(_recibidoTexto);
+        if (recibido < Total) return;
+        await OnConfirmar.InvokeAsync(recibido);
+    }
+
+    private Task Cancelar() => OnCancelar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            var recibido = ParseDinero(_recibidoTexto);
+            if (recibido >= Total) await OnConfirmar.InvokeAsync(recibido);
+        }
+        else if (e.Key == "Escape")
+        {
+            await OnCancelar.InvokeAsync();
+        }
+    }
+}

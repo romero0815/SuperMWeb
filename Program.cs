@@ -32,6 +32,11 @@ builder.Services.AddScoped<IProductosRepository, ProductosRepository>();
 builder.Services.AddScoped<IVentasRepository, VentasRepository>();
 builder.Services.AddScoped<IUsuariosRepository, UsuariosRepository>();
 
+// Estado de venta, scanner y helpers de UI: Scoped por circuito Blazor.
+builder.Services.AddScoped<SuperMWeb.Services.VentaState>();
+builder.Services.AddScoped<SuperMWeb.Services.ScannerService>();
+builder.Services.AddScoped<SuperMWeb.Services.UiInterop>();
+
 // ITicketPrinter: seleccionable por config Printer:Tipo (Local o Null).
 // Null se usa en Development sin hardware y en tests HTTP.
 var printerTipo = builder.Configuration["Printer:Tipo"] ?? "Local";

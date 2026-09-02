@@ -1,18 +1,328 @@
 @page "/venta"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@implements IAsyncDisposable
 @using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using SuperMWeb.Application
+@using SuperMWeb.Components.Dialogs
+@using SuperMWeb.Domain
+@using SuperMWeb.Services
+@inject VentaState State
+@inject ScannerService Scanner
+@inject UiInterop Ui
+@inject IProductosRepository ProductosRepo
+@inject IVentasRepository VentasRepo
+@inject ITicketPrinter Printer
+@inject IJSRuntime JS
+@inject IConfiguration Config
+@inject AuthenticationStateProvider Auth
 
 <PageTitle>Venta - SuperM</PageTitle>
 
-<div style="padding: 1rem;">
-    <h1>Pantalla de venta</h1>
-    <p style="color:#52606d">Componente placeholder. La UI real se agrega en los siguientes commits.</p>
+<div class="venta-layout" tabindex="0" @onkeydown="OnKeyDown">
 
-    <AuthorizeView>
-        <Authorized>
-            <p>Cajero autenticado: <strong>@context.User.Identity?.Name</strong>
-               (rol: @context.User.FindFirst(ClaimTypes.Role)?.Value)</p>
-        </Authorized>
-    </AuthorizeView>
+    <section class="venta-detalle">
+        @if (State.Items.Count == 0)
+        {
+            <div class="vacio">
+                <strong>Listo para vender</strong>
+                Escanea un producto para empezar.
+            </div>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:8%">#</th>
+                        <th>Producto</th>
+                        <th class="numero" style="width:10%">Cant</th>
+                        <th class="numero" style="width:18%">V. Unit</th>
+                        <th class="numero" style="width:20%">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < State.Items.Count; i++)
+                    {
+                        var idx = i;
+                        var l = State.Items[i];
+                        var cls = idx == _seleccionada ? "seleccionada" : null;
+                        <tr class="@cls" @onclick="() => Seleccionar(idx)">
+                            <td>@(idx + 1)</td>
+                            <td>@l.Nombre</td>
+                            <td class="numero">@l.Cantidad</td>
+                            <td class="numero">@l.PrecioUnitario.ToString("C0")</td>
+                            <td class="numero">@l.Subtotal.ToString("C0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <aside class="venta-totales">
+        @if (_feedback is not null)
+        {
+            <div class="feedback @_feedback.Tipo">@_feedback.Mensaje</div>
+        }
+
+        <div>
+            <p class="label">Total</p>
+            <div class="total">@State.Total.ToString("C0")</div>
+            <p class="items-count">@State.Items.Count item(s)</p>
+        </div>
+
+        <button class="btn-cobrar" disabled="@(State.Items.Count == 0)" @onclick="AbrirCobro">
+            COBRAR (F10)
+        </button>
+        <button class="btn-cancelar" disabled="@(State.Items.Count == 0)" @onclick="CancelarVenta">
+            Cancelar venta (Esc)
+        </button>
+    </aside>
+
+    <div class="venta-atajos">
+        <span><kbd>Escanear</kbd> agrega al detalle</span>
+        <span><kbd>F2</kbd> cambiar cantidad</span>
+        <span><kbd>Del</kbd> eliminar linea seleccionada</span>
+        <span><kbd>F10</kbd> cobrar</span>
+        <span><kbd>Esc</kbd> cancelar</span>
+    </div>
 </div>
+
+@if (_mostrarCobro)
+{
+    <CobroDialog Total="State.Total"
+                 OnConfirmar="ConfirmarCobro"
+                 OnCancelar="() => _mostrarCobro = false" />
+}
+
+@if (_mostrarCantidad && _seleccionada >= 0 && _seleccionada < State.Items.Count)
+{
+    <CantidadDialog Actual="State.Items[_seleccionada].Cantidad"
+                    Nombre="State.Items[_seleccionada].Nombre"
+                    OnConfirmar="AplicarNuevaCantidad"
+                    OnCancelar="() => _mostrarCantidad = false" />
+}
+
+@code {
+    private int _seleccionada = -1;
+    private bool _mostrarCobro;
+    private bool _mostrarCantidad;
+    private FeedbackMsg? _feedback;
+    private CancellationTokenSource? _feedbackCts;
+    private int _idUsuario;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await Auth.GetAuthenticationStateAsync();
+        var claim = auth.User.FindFirst(ClaimTypes.NameIdentifier);
+        _idUsuario = int.TryParse(claim?.Value, out var id) ? id : 0;
+
+        State.OnCambio += OnVentaCambio;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        await State.RestaurarDesdeStorageAsync(JS);
+
+        Scanner.OnEscaneo += OnEscaneo;
+        await Scanner.IniciarAsync();
+
+        await Ui.EnfocarAsync(".venta-layout");
+    }
+
+    private async void OnVentaCambio()
+    {
+        await InvokeAsync(async () =>
+        {
+            await State.PersistirAsync(JS);
+            StateHasChanged();
+        });
+    }
+
+    private async void OnEscaneo(string codigo)
+    {
+        if (_mostrarCobro || _mostrarCantidad) return;
+        await InvokeAsync(async () => await ProcesarEscaneoAsync(codigo));
+    }
+
+    private async Task ProcesarEscaneoAsync(string codigo)
+    {
+        codigo = codigo?.Trim() ?? string.Empty;
+        if (codigo.Length == 0) return;
+
+        Producto? p;
+        try { p = await ProductosRepo.BuscarPorCodigoBarrasAsync(codigo); }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"Error consultando producto: {ex.Message}");
+            await Ui.BeepAsync(220, 250);
+            return;
+        }
+
+        if (p is null)
+        {
+            await MostrarFeedback("error", $"Producto no encontrado (codigo {codigo}).");
+            await Ui.BeepAsync(220, 250);
+            return;
+        }
+
+        var idxExistente = -1;
+        for (var i = 0; i < State.Items.Count; i++)
+        {
+            var l = State.Items[i];
+            if (l.IdProducto == p.IdProducto && l.PrecioUnitario == p.PrecioVenta)
+            { idxExistente = i; break; }
+        }
+
+        var cantidadEnVenta = idxExistente >= 0 ? State.Items[idxExistente].Cantidad : 0;
+        int stockActual;
+        try { stockActual = await ProductosRepo.ObtenerStockAsync(p.IdProducto); }
+        catch { stockActual = p.Stock; }
+
+        if (stockActual < cantidadEnVenta + 1)
+        {
+            await MostrarFeedback("error", $"Sin stock: {p.Nombre} (stock actual {stockActual}).");
+            await Ui.BeepAsync(220, 250);
+            return;
+        }
+
+        if (idxExistente >= 0)
+        {
+            State.CambiarCantidad(idxExistente, cantidadEnVenta + 1);
+        }
+        else
+        {
+            State.AgregarLinea(new LineaTicket
+            {
+                IdProducto = p.IdProducto,
+                Nombre = p.Nombre,
+                Cantidad = 1,
+                PrecioUnitario = p.PrecioVenta
+            });
+        }
+
+        _seleccionada = idxExistente >= 0 ? idxExistente : State.Items.Count - 1;
+        await MostrarFeedback("exito", $"{p.Nombre} agregado.");
+    }
+
+    private void Seleccionar(int idx) => _seleccionada = idx;
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (_mostrarCobro || _mostrarCantidad) return;
+
+        switch (e.Key)
+        {
+            case "F2":
+                if (_seleccionada >= 0) _mostrarCantidad = true;
+                break;
+            case "Delete":
+                if (_seleccionada >= 0)
+                {
+                    State.EliminarLinea(_seleccionada);
+                    _seleccionada = Math.Min(_seleccionada, State.Items.Count - 1);
+                }
+                break;
+            case "F10":
+                if (State.Items.Count > 0) _mostrarCobro = true;
+                break;
+            case "Escape":
+                if (State.Items.Count > 0) await CancelarVenta();
+                break;
+        }
+    }
+
+    private async Task CancelarVenta()
+    {
+        State.Reiniciar();
+        _seleccionada = -1;
+        await State.LimpiarStorageAsync(JS);
+        await MostrarFeedback("info", "Venta cancelada.");
+    }
+
+    private void AbrirCobro() { if (State.Items.Count > 0) _mostrarCobro = true; }
+
+    private Task AplicarNuevaCantidad(int nueva)
+    {
+        State.CambiarCantidad(_seleccionada, nueva);
+        _mostrarCantidad = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task ConfirmarCobro(decimal recibido)
+    {
+        State.SetDineroRecibido(recibido);
+        _mostrarCobro = false;
+
+        var total = State.Total;
+        var items = State.Items.ToList();
+
+        try
+        {
+            await VentasRepo.RegistrarVentaAsync(_idUsuario, string.Empty, total, items);
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo registrar la venta: {ex.Message}");
+            await Ui.BeepAsync(220, 400);
+            return;
+        }
+
+        try
+        {
+            var nombreNegocio = Config["Negocio:Nombre"] ?? "";
+            var bytes = TicketBuilder.ConstruirFactura(items, total, nombreNegocio);
+            var res = await Printer.ImprimirAsync(bytes);
+            if (!res.Exitoso)
+            {
+                await MostrarFeedback("error", $"Venta registrada pero fallo la impresion: {res.MensajeError}");
+                await Ui.BeepAsync(220, 250);
+            }
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"Venta registrada. Error al imprimir: {ex.Message}");
+            await Ui.BeepAsync(220, 250);
+        }
+
+        State.Reiniciar();
+        _seleccionada = -1;
+        await State.LimpiarStorageAsync(JS);
+        await MostrarFeedback("exito", $"Venta registrada. Cambio: {(recibido - total).ToString("C0")}");
+    }
+
+    private async Task MostrarFeedback(string tipo, string mensaje)
+    {
+        _feedbackCts?.Cancel();
+        _feedbackCts = new CancellationTokenSource();
+        var token = _feedbackCts.Token;
+
+        _feedback = new FeedbackMsg(tipo, mensaje);
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+            if (!token.IsCancellationRequested)
+            {
+                _feedback = null;
+                StateHasChanged();
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Scanner.OnEscaneo -= OnEscaneo;
+        State.OnCambio -= OnVentaCambio;
+        await Scanner.DetenerAsync();
+        _feedbackCts?.Cancel();
+    }
+
+    private record FeedbackMsg(string Tipo, string Mensaje);
+}

@@ -1,0 +1,61 @@
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+
+<div class="modal-backdrop" @onclick="Cancelar" @onclick:stopPropagation="true">
+    <div class="modal" @onclick:stopPropagation="true" @onkeydown="OnKey">
+        <h2>Cambiar cantidad</h2>
+        <p style="margin-top:0; color:#52606d">@Nombre</p>
+
+        <div class="campo">
+            <label for="txtCantidad">Nueva cantidad</label>
+            <input id="txtCantidad"
+                   type="text"
+                   inputmode="numeric"
+                   @bind="_cantidadTexto"
+                   @bind:event="oninput"
+                   autocomplete="off" />
+        </div>
+
+        <div class="acciones">
+            <button class="btn-secondary" @onclick="Cancelar">Cancelar (Esc)</button>
+            <button class="btn-primary" @onclick="Confirmar">Aplicar (Enter)</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int Actual { get; set; }
+    [Parameter, EditorRequired] public string Nombre { get; set; } = string.Empty;
+    [Parameter] public EventCallback<int> OnConfirmar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private string _cantidadTexto = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        _cantidadTexto = Actual.ToString();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("eval",
+                "setTimeout(() => { const el = document.getElementById('txtCantidad'); if (el) { el.focus(); el.select(); } }, 30)");
+        }
+    }
+
+    private async Task Confirmar()
+    {
+        if (int.TryParse(_cantidadTexto, out var n) && n > 0)
+            await OnConfirmar.InvokeAsync(n);
+    }
+
+    private Task Cancelar() => OnCancelar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Confirmar();
+        else if (e.Key == "Escape") await OnCancelar.InvokeAsync();
+    }
+}
