@@ -1,22 +1,100 @@
+using System.Globalization;
+using Microsoft.AspNetCore.Localization;
+using Serilog;
+using SuperMWeb.Api;
+using SuperMWeb.Application;
 using SuperMWeb.Components;
+using SuperMWeb.Infrastructure.Data;
+using SuperMWeb.Infrastructure.Printers;
 
+// Serilog leido desde appsettings.json (Serilog seccion).
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+builder.Host.UseSerilog((context, cfg) => cfg.ReadFrom.Configuration(context.Configuration));
+
+// Cultura fija es-CO. La caja opera en Colombia; el parser de moneda del
+// dominio y el formato del ticket dependen de esta cultura (ver §Cultura
+// del inventario y decisiones 4 del prompt).
+var culturaColombia = new CultureInfo("es-CO");
+CultureInfo.DefaultThreadCurrentCulture = culturaColombia;
+CultureInfo.DefaultThreadCurrentUICulture = culturaColombia;
+
+// ---------- Servicios de infraestructura ----------
+
+// SqlConnectionFactory como singleton: es thread-safe (solo mantiene la
+// cadena) y crea SqlConnection nuevas por cada Crear().
+var connectionString = builder.Configuration.GetConnectionString("SuperMDB")
+    ?? throw new InvalidOperationException("Falta ConnectionStrings:SuperMDB en appsettings.json.");
+builder.Services.AddSingleton(new SqlConnectionFactory(connectionString));
+
+builder.Services.AddScoped<IProductosRepository, ProductosRepository>();
+builder.Services.AddScoped<IVentasRepository, VentasRepository>();
+
+// ITicketPrinter: seleccionable por config Printer:Tipo (Local o Null).
+// Null se usa en Development sin hardware y en tests HTTP.
+var printerTipo = builder.Configuration["Printer:Tipo"] ?? "Local";
+if (string.Equals(printerTipo, "Null", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddSingleton<ITicketPrinter, NullTicketPrinter>();
+}
+else if (OperatingSystem.IsWindows())
+{
+    var nombreParcial = builder.Configuration["Printer:NombreParcial"] ?? "POS";
+#pragma warning disable CA1416 // guard con OperatingSystem.IsWindows() arriba
+    builder.Services.AddSingleton<ITicketPrinter>(_ => new LocalSpoolerPrinter(nombreParcial));
+#pragma warning restore CA1416
+}
+else
+{
+    throw new PlatformNotSupportedException(
+        "Printer:Tipo=Local solo esta soportado en Windows. Use 'Null' en otras plataformas.");
+}
+
+// ---------- Blazor Server ----------
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+// ---------- API cross-cutting ----------
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+builder.Services.AddProblemDetails();
+
+builder.Services.AddHealthChecks()
+    .AddCheck<SqlServerHealthCheck>("sql-server");
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (!app.Environment.IsDevelopment())
+// ---------- Pipeline ----------
+
+// Cultura del request tambien fija en es-CO. Cubre model binding, formateo, etc.
+var localizationOptions = new RequestLocalizationOptions()
+    .SetDefaultCulture("es-CO")
+    .AddSupportedCultures("es-CO")
+    .AddSupportedUICultures("es-CO");
+app.UseRequestLocalization(localizationOptions);
+
+app.UseSerilogRequestLogging();
+
+// Manejo de errores: en Prod emitimos ProblemDetails (mensaje humano, no
+// stack trace) para todas las rutas. En Dev tambien via ProblemDetails,
+// pero con detalle extendido gracias a AddProblemDetails + IncludeDetails.
+app.UseExceptionHandler();
+app.UseStatusCodePages();
+
+if (app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+else
+{
     app.UseHsts();
 }
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
+
+// No hay HTTPS: mismo host, contexto seguro por localhost (prompt).
+// app.UseHttpsRedirection() eliminado a proposito.
 
 app.UseAntiforgery();
 
@@ -24,4 +102,10 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+app.MapVentaEndpoints();
+app.MapHealthChecks("/health");
+
 app.Run();
+
+// Necesario para tests HTTP (WebApplicationFactory<Program>).
+public partial class Program { }

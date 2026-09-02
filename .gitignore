@@ -363,3 +363,5 @@ FodyWeavers.xsd
 # Idea
 .DS_Store
 .idea
+# Runtime logs
+logs/
