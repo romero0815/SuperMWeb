@@ -13,9 +13,10 @@ public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        // POST /login con Usuario y Clave del form. Redirige a returnUrl si viene,
-        // si no a /. Antiforgery ya validado por app.UseAntiforgery() para forms.
-        app.MapPost("/login", async (
+        // POST /api/login con Usuario y Clave del form. Ruta bajo /api/ para
+        // no colisionar con la pagina Blazor /login (@page "/login").
+        // Redirige a returnUrl si viene, si no a /.
+        app.MapPost("/api/login", async (
             HttpContext http,
             IUsuariosRepository usuarios,
             IAntiforgery antiforgery) =>
@@ -54,7 +55,7 @@ public static class AuthEndpoints
             return Results.Redirect(string.IsNullOrEmpty(returnUrl) ? "/" : returnUrl);
         }).DisableAntiforgery(); // validamos manualmente arriba
 
-        app.MapPost("/logout", async (HttpContext http, IAntiforgery antiforgery) =>
+        app.MapPost("/api/logout", async (HttpContext http, IAntiforgery antiforgery) =>
         {
             await antiforgery.ValidateRequestAsync(http);
             await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);

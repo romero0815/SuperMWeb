@@ -16,7 +16,7 @@
             <div class="login-error" role="alert">Usuario o contrasena incorrectos.</div>
         }
 
-        <form method="post" action="/login" autocomplete="off">
+        <form method="post" action="/api/login" autocomplete="off">
             <input type="hidden" name="__RequestVerificationToken" value="@_token" />
             @if (!string.IsNullOrEmpty(ReturnUrl))
             {
