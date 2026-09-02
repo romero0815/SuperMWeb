@@ -11,7 +11,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-    <DefaultItemExcludes>$(DefaultItemExcludes);SuperMWeb.Domain\**;SuperMWeb.Application\**;SuperMWeb.Infrastructure\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);SuperMWeb.Domain\**;SuperMWeb.Application\**;SuperMWeb.Infrastructure\**;SuperMWeb.Domain.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
 </Project>
