@@ -1,3 +1,6 @@
 <Solution>
+  <Project Path="SuperMWeb.Application/SuperMWeb.Application.csproj" />
   <Project Path="SuperMWeb.csproj" />
+  <Project Path="SuperMWeb.Domain/SuperMWeb.Domain.csproj" />
+  <Project Path="SuperMWeb.Infrastructure/SuperMWeb.Infrastructure.csproj" />
 </Solution>
