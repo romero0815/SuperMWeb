@@ -1,0 +1,54 @@
+@page "/login"
+@layout LoginLayout
+@using Microsoft.AspNetCore.Antiforgery
+@inject IAntiforgery Antiforgery
+@inject IHttpContextAccessor Http
+
+<PageTitle>Iniciar sesion</PageTitle>
+
+<div class="login-shell">
+    <div class="login-card">
+        <h1>SuperM</h1>
+        <p class="subtitle">Punto de venta</p>
+
+        @if (Error == 1)
+        {
+            <div class="login-error" role="alert">Usuario o contrasena incorrectos.</div>
+        }
+
+        <form method="post" action="/api/login" autocomplete="off">
+            <input type="hidden" name="__RequestVerificationToken" value="@_token" />
+            @if (!string.IsNullOrEmpty(ReturnUrl))
+            {
+                <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+            }
+
+            <label>
+                <span>Usuario</span>
+                <input name="Usuario" autofocus required />
+            </label>
+
+            <label>
+                <span>Contrasena</span>
+                <input name="Clave" type="password" required />
+            </label>
+
+            <button type="submit">Ingresar</button>
+        </form>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public int? Error { get; set; }
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private string _token = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        // Genera el token antiforgery para el form. IHttpContextAccessor es
+        // seguro en render SSR.
+        var http = Http.HttpContext!;
+        _token = Antiforgery.GetAndStoreTokens(http).RequestToken ?? string.Empty;
+    }
+}

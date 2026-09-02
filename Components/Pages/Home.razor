@@ -1,7 +1,9 @@
-﻿@page "/"
+@page "/"
+@inject NavigationManager Nav
 
-<PageTitle>Home</PageTitle>
-
-<h1>Hello, world!</h1>
-
-Welcome to your new app.
+@code {
+    // La raiz siempre redirige al flujo de venta. Si el usuario no esta
+    // autenticado, /venta redirige a /login. No hay dashboard.
+    protected override void OnInitialized() =>
+        Nav.NavigateTo("/venta", replace: true);
+}
