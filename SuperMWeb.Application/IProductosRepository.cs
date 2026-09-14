@@ -23,10 +23,13 @@ public interface IProductosRepository
     // son excluyentes, igual que en el desktop.
     // limite = null trae todas las filas: lo usa la exportacion a Excel, que
     // en el desktop tampoco aplicaba el TOP de la grilla.
+    // idProveedor restringe el listado a un proveedor concreto: lo usa la
+    // pantalla de compras, que solo ofrece los productos del proveedor elegido.
     Task<IReadOnlyList<ProductoListado>> ListarAsync(
         string? filtroNombre = null,
         string? codigoBarras = null,
         int? limite = 250,
+        int? idProveedor = null,
         CancellationToken ct = default);
 
     Task<Producto?> ObtenerPorIdAsync(int idProducto, CancellationToken ct = default);
@@ -45,4 +48,10 @@ public interface IProductosRepository
         string codigoBarras,
         int? idExcluir = null,
         CancellationToken ct = default);
+
+    // Baja usada por la pantalla de compras: si el producto ya aparece en
+    // DetalleCompras o DetalleFacturas se marca Active = 0 para no romper el
+    // historico; si no tiene movimientos se borra fisicamente. Devuelve true
+    // si el borrado fue fisico.
+    Task<bool> EliminarAsync(int idProducto, CancellationToken ct = default);
 }

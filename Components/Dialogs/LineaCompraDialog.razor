@@ -1,0 +1,105 @@
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@inject IJSRuntime JS
+
+@* Reemplaza los dos InputBox encadenados de ComprasForm (cantidad y precio
+   unitario). El precio llega precargado con el PrecioCompra actual del
+   producto, igual que en el desktop. *@
+
+<div class="modal-backdrop" @onclick="Cancelar">
+    <div class="modal modal-form" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
+        <h2>Agregar a la compra</h2>
+        <p class="confirm-texto">@Nombre</p>
+
+        @if (_error is not null)
+        {
+            <div class="feedback error">@_error</div>
+        }
+
+        <div class="form-rejilla">
+            <div class="campo-form">
+                <label for="lcCantidad">Cantidad</label>
+                <input id="lcCantidad" inputmode="numeric" @bind="_cantidad" @bind:event="oninput" autocomplete="off" />
+            </div>
+            <div class="campo-form">
+                <label for="lcPrecio">Precio unitario</label>
+                <input id="lcPrecio" inputmode="numeric" @bind="_precio" @bind:event="oninput" autocomplete="off" />
+            </div>
+        </div>
+
+        <p class="nota">
+            Subtotal: <strong>@Subtotal.ToString("C0")</strong>.
+            Este precio queda como nuevo precio de compra del producto.
+        </p>
+
+        <div class="acciones">
+            <button class="btn-secondary" @onclick="Cancelar">Cancelar (Esc)</button>
+            <button class="btn-primary" @onclick="Confirmar">Agregar (Enter)</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Nombre { get; set; } = string.Empty;
+    [Parameter] public decimal PrecioSugerido { get; set; }
+    [Parameter] public EventCallback<(int Cantidad, decimal Precio)> OnConfirmar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private string _cantidad = "1";
+    private string _precio = string.Empty;
+    private string? _error;
+
+    private decimal Subtotal =>
+        int.TryParse(_cantidad, out var c) && decimal.TryParse(_precio, out var p) ? c * p : 0m;
+
+    protected override void OnParametersSet()
+    {
+        _cantidad = "1";
+        // El desktop sugiere la parte entera del precio de compra actual.
+        _precio = decimal.Truncate(PrecioSugerido).ToString("0");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("eval",
+                "setTimeout(() => { const el = document.getElementById('lcCantidad'); if (el) { el.focus(); el.select(); } }, 30)");
+        }
+    }
+
+    private async Task Confirmar()
+    {
+        _error = null;
+
+        var cantidad = _cantidad.Trim();
+        var precio = _precio.Trim();
+
+        // El desktop valida ambos con Utils.IsNumber, que solo acepta enteros:
+        // en compras no se pueden digitar centavos. Se mantiene igual.
+        if (!FormatosTexto.IsNumber(cantidad) || !FormatosTexto.IsNumber(precio))
+        {
+            _error = "Ingrese una cantidad valida o valor valido.";
+            return;
+        }
+
+        var c = int.Parse(cantidad);
+        var p = decimal.Parse(precio);
+
+        if (c <= 0 || p <= 0)
+        {
+            _error = "La cantidad o el valor deben ser mayor a 0.";
+            return;
+        }
+
+        await OnConfirmar.InvokeAsync((c, p));
+    }
+
+    private Task Cancelar() => OnCancelar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Confirmar();
+        else if (e.Key == "Escape") await OnCancelar.InvokeAsync();
+    }
+}

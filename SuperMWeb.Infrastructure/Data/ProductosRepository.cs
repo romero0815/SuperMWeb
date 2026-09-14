@@ -77,6 +77,7 @@ public sealed class ProductosRepository : IProductosRepository
         string? filtroNombre = null,
         string? codigoBarras = null,
         int? limite = 250,
+        int? idProveedor = null,
         CancellationToken ct = default)
     {
         // El TOP solo aplica al listado sin filtro, igual que el desktop:
@@ -85,6 +86,8 @@ public sealed class ProductosRepository : IProductosRepository
             ? $"SELECT TOP({limite.Value}) p.IdProducto"
             : "SELECT p.IdProducto";
         var baseSql = SqlListadoBase.Replace("SELECT p.IdProducto", seleccion);
+
+        if (idProveedor is not null) baseSql += " AND p.IdProveedor = @idProveedor";
 
         string sql;
         SqlParameter? parametro = null;
@@ -111,6 +114,7 @@ public sealed class ProductosRepository : IProductosRepository
         await con.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, con);
         if (parametro is not null) cmd.Parameters.Add(parametro);
+        if (idProveedor is not null) cmd.Parameters.Add(new SqlParameter("@idProveedor", idProveedor.Value));
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         var lista = new List<ProductoListado>();
@@ -210,6 +214,39 @@ public sealed class ProductosRepository : IProductosRepository
 
         var res = await cmd.ExecuteScalarAsync(ct);
         return res is not null && res != DBNull.Value && Convert.ToInt32(res) > 0;
+    }
+
+    public async Task<bool> EliminarAsync(int idProducto, CancellationToken ct = default)
+    {
+        // El desktop hacia dos COUNT por separado y sumaba. Aqui se resuelve
+        // en una consulta: si el producto tiene movimientos no se borra.
+        const string sqlTieneMovimientos = @"
+            SELECT CASE WHEN EXISTS (SELECT 1 FROM DetalleCompras  WHERE IdProducto = @id)
+                          OR EXISTS (SELECT 1 FROM DetalleFacturas WHERE IdProducto = @id)
+                        THEN 1 ELSE 0 END";
+
+        await using var con = _factory.Crear();
+        await con.OpenAsync(ct);
+
+        bool tieneMovimientos;
+        await using (var cmd = new SqlCommand(sqlTieneMovimientos, con))
+        {
+            cmd.Parameters.Add(new SqlParameter("@id", idProducto));
+            var res = await cmd.ExecuteScalarAsync(ct);
+            tieneMovimientos = res is not null && res != DBNull.Value && Convert.ToInt32(res) == 1;
+        }
+
+        var sql = tieneMovimientos
+            ? "UPDATE Productos SET Active = 0 WHERE IdProducto = @id"
+            : "DELETE FROM Productos WHERE IdProducto = @id";
+
+        await using (var cmd = new SqlCommand(sql, con))
+        {
+            cmd.Parameters.Add(new SqlParameter("@id", idProducto));
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        return !tieneMovimientos;
     }
 
     private static void AgregarCampos(SqlCommand cmd, Producto p)

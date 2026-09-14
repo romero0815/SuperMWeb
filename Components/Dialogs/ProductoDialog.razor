@@ -75,7 +75,11 @@
 @code {
     // 0 = alta. Cualquier otro valor carga ese producto para editarlo.
     [Parameter] public int IdProducto { get; set; }
-    [Parameter] public EventCallback OnGuardado { get; set; }
+
+    // Emite el IdProducto resultante: el recien creado en un alta, o el mismo
+    // que entro al editar. La pantalla de compras lo necesita para agregar el
+    // producto al detalle sin volver a consultarlo.
+    [Parameter] public EventCallback<int> OnGuardado { get; set; }
     [Parameter] public EventCallback OnCancelar { get; set; }
 
     private bool EsEdicion => IdProducto > 0;
@@ -171,10 +175,22 @@
                 CodigoBarras = string.IsNullOrWhiteSpace(_codigoBarras) ? null : _codigoBarras.Trim()
             };
 
-            if (EsEdicion) await ProductosRepo.ActualizarAsync(producto);
-            else await ProductosRepo.CrearAsync(producto);
+            int idResultante;
+            if (EsEdicion)
+            {
+                await ProductosRepo.ActualizarAsync(producto);
+                idResultante = IdProducto;
+            }
+            else
+            {
+                // SCOPE_IDENTITY dentro del INSERT. El desktop leia
+                // IDENT_CURRENT('Productos') despues de cerrar el formulario,
+                // que devuelve el ultimo id de la tabla sin importar quien lo
+                // creo: con dos cajas podia traer el producto de otra sesion.
+                idResultante = await ProductosRepo.CrearAsync(producto);
+            }
 
-            await OnGuardado.InvokeAsync();
+            await OnGuardado.InvokeAsync(idResultante);
         }
         catch (Exception ex)
         {

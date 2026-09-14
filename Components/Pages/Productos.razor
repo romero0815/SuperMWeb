@@ -276,11 +276,12 @@
         _mostrarFormulario = true;
     }
 
-    private async Task ProductoGuardado()
+    private async Task ProductoGuardado(int idProducto)
     {
+        var eraEdicion = _idEnEdicion > 0;
         _mostrarFormulario = false;
         await Cargar();
-        await MostrarFeedback("exito", _idEnEdicion > 0
+        await MostrarFeedback("exito", eraEdicion
             ? "Producto actualizado correctamente."
             : "Producto creado correctamente.");
     }

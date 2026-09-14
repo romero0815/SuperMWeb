@@ -1,0 +1,459 @@
+@page "/compras"
+@attribute [Authorize(Roles = "Administrador,SuperAdmin")]
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using SuperMWeb.Application
+@using SuperMWeb.Components.Dialogs
+@using SuperMWeb.Domain
+@using SuperMWeb.Services
+@inject IProductosRepository ProductosRepo
+@inject IProveedoresRepository ProveedoresRepo
+@inject IComprasRepository ComprasRepo
+@inject ScannerService Scanner
+@inject AuthenticationStateProvider Auth
+
+@* Equivalente de ComprasForm del desktop: se elige proveedor, se arma el
+   detalle producto por producto con cantidad y precio unitario, y se registra
+   con el SP RegistrarCompra. El stock sube por el trigger de
+   MovimientosInventario, no desde aqui. *@
+
+<PageTitle>Compras - SuperM</PageTitle>
+
+<div class="pagina">
+
+    <div class="pagina-header">
+        <h1>Compras</h1>
+        <div class="acciones">
+            <button class="btn btn-secundario" @onclick="AbrirNuevoProducto">Nuevo producto</button>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="feedback @_feedback.Tipo">@_feedback.Mensaje</div>
+    }
+
+    <div class="compra-layout">
+
+        <section class="panel">
+            <div class="filtros">
+                <div class="campo">
+                    <label for="proveedor">Proveedor</label>
+                    <select id="proveedor" @bind="_idProveedor" @bind:after="CargarProductos">
+                        @foreach (var p in _proveedores)
+                        {
+                            <option value="@p.IdProveedor">@p.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="campo">
+                    <label for="filtro">Buscar producto</label>
+                    <input id="filtro" class="busqueda" @bind="_filtroNombre" @bind:event="oninput"
+                           @bind:after="CargarProductos" placeholder="Nombre del producto" autocomplete="off" />
+                </div>
+                <div class="campo">
+                    <label for="codigo">Codigo de barras</label>
+                    <input id="codigo" @bind="_filtroCodigo" @bind:event="oninput"
+                           @bind:after="CargarProductos" placeholder="Escanea o escribe" autocomplete="off" />
+                </div>
+            </div>
+
+            <div class="tabla-scroll">
+                <table class="tabla">
+                    <thead>
+                        <tr>
+                            <th class="numero">#</th>
+                            <th>Nombre</th>
+                            <th>Descripcion</th>
+                            <th class="numero">P. compra</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_productos.Count == 0)
+                        {
+                            <tr><td colspan="5" class="vacio-fila">Este proveedor no tiene productos que coincidan.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var p in _productos)
+                            {
+                                <tr>
+                                    <td class="numero">@p.IdProducto</td>
+                                    <td>@p.Nombre</td>
+                                    <td>@p.Descripcion</td>
+                                    <td class="numero">@p.PrecioCompra.ToString("C0")</td>
+                                    <td class="acciones-fila">
+                                        <button class="btn btn-exito btn-mini" @onclick="() => AbrirAgregar(p)">Agregar</button>
+                                        <button class="btn btn-peligro btn-mini" @onclick="() => _bajaPendiente = p">Eliminar</button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Detalle de la compra</h2>
+
+            <div class="tabla-scroll">
+                <table class="tabla">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th class="numero">Cant</th>
+                            <th class="numero">P. unit</th>
+                            <th class="numero">Subtotal</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_detalle.Count == 0)
+                        {
+                            <tr><td colspan="5" class="vacio-fila">Agrega productos para armar la compra.</td></tr>
+                        }
+                        else
+                        {
+                            @for (var i = 0; i < _detalle.Count; i++)
+                            {
+                                var idx = i;
+                                var l = _detalle[i];
+                                <tr>
+                                    <td>@l.Nombre</td>
+                                    <td class="numero">@l.Cantidad</td>
+                                    <td class="numero">@l.PrecioUnitario.ToString("C0")</td>
+                                    <td class="numero">@l.Subtotal.ToString("C0")</td>
+                                    <td>
+                                        <button class="btn btn-peligro btn-mini" @onclick="() => QuitarLinea(idx)">-</button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="compra-total">
+                <div>
+                    <p class="label">Total de la compra</p>
+                    <div class="total">@Total.ToString("C0")</div>
+                    <p class="items-count">@_detalle.Count item(s)</p>
+                </div>
+
+                <div class="compra-botones">
+                    <button class="btn btn-exito" disabled="@(_detalle.Count == 0 || _registrando)"
+                            @onclick="() => _confirmarCompra = true">
+                        @(_registrando ? "Registrando..." : "Registrar compra")
+                    </button>
+                    <button class="btn btn-peligro" disabled="@(_detalle.Count == 0 || _registrando)"
+                            @onclick="CancelarCompra">
+                        Cancelar compra
+                    </button>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+@if (_lineaEnEdicion is not null)
+{
+    <LineaCompraDialog Nombre="_lineaEnEdicion.Nombre"
+                       PrecioSugerido="_lineaEnEdicion.PrecioCompra"
+                       OnConfirmar="AgregarAlDetalle"
+                       OnCancelar="() => _lineaEnEdicion = null" />
+}
+
+@if (_confirmarCompra)
+{
+    <ConfirmDialog Titulo="Registrar compra"
+                   Mensaje="@($"Deseas registrar la compra por {Total.ToString("C0")}? El stock de los productos subira automaticamente.")"
+                   OnAceptar="RegistrarCompra"
+                   OnCancelar="() => _confirmarCompra = false" />
+}
+
+@if (_bajaPendiente is not null)
+{
+    <ConfirmDialog Titulo="Eliminar producto"
+                   Mensaje="@($"Deseas eliminar \"{_bajaPendiente.Nombre}\"? Si nunca se ha comprado ni vendido se borrara definitivamente.")"
+                   Peligro="true"
+                   OnAceptar="ConfirmarBaja"
+                   OnCancelar="() => _bajaPendiente = null" />
+}
+
+@if (_mostrarNuevoProducto)
+{
+    <ProductoDialog IdProducto="0"
+                    OnGuardado="NuevoProductoGuardado"
+                    OnCancelar="() => _mostrarNuevoProducto = false" />
+}
+
+@code {
+    private IReadOnlyList<Proveedor> _proveedores = Array.Empty<Proveedor>();
+    private IReadOnlyList<ProductoListado> _productos = Array.Empty<ProductoListado>();
+    private readonly List<LineaTicket> _detalle = new();
+
+    private int _idProveedor;
+    private string _filtroNombre = string.Empty;
+    private string _filtroCodigo = string.Empty;
+
+    private ProductoListado? _lineaEnEdicion;
+    private ProductoListado? _bajaPendiente;
+    private bool _confirmarCompra;
+    private bool _mostrarNuevoProducto;
+    private bool _registrando;
+    private int _idUsuario;
+
+    private FeedbackMsg? _feedback;
+    private CancellationTokenSource? _feedbackCts;
+
+    private decimal Total => _detalle.Sum(l => l.Subtotal);
+
+    private bool HayModal => _lineaEnEdicion is not null || _bajaPendiente is not null
+                             || _confirmarCompra || _mostrarNuevoProducto;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await Auth.GetAuthenticationStateAsync();
+        _idUsuario = int.TryParse(auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : 0;
+
+        try
+        {
+            _proveedores = await ProveedoresRepo.ListarActivosAsync();
+
+            // El desktop arranca con el proveedor centinela "Ninguno".
+            var ninguno = _proveedores.FirstOrDefault(p =>
+                string.Equals(p.Nombre, "Ninguno", StringComparison.OrdinalIgnoreCase));
+            _idProveedor = ninguno?.IdProveedor ?? _proveedores.FirstOrDefault()?.IdProveedor ?? 0;
+
+            await CargarProductos();
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo cargar la pantalla: {ex.Message}");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        Scanner.OnEscaneo += OnEscaneo;
+        await Scanner.IniciarAsync();
+    }
+
+    private async void OnEscaneo(string codigo)
+    {
+        if (HayModal) return;
+
+        // El desktop solo filtra la grilla al escanear en compras: el intento de
+        // "simular clic en Agregar" apuntaba a la columna 0, que no es un boton,
+        // asi que nunca agregaba nada. Se replica el filtrado.
+        await InvokeAsync(async () =>
+        {
+            _filtroCodigo = codigo.Trim();
+            _filtroNombre = string.Empty;
+            await CargarProductos();
+            StateHasChanged();
+        });
+    }
+
+    private async Task CargarProductos()
+    {
+        try
+        {
+            _productos = await ProductosRepo.ListarAsync(
+                filtroNombre: string.IsNullOrWhiteSpace(_filtroCodigo) ? _filtroNombre : null,
+                codigoBarras: _filtroCodigo,
+                idProveedor: _idProveedor);
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudieron cargar los productos: {ex.Message}");
+            _productos = Array.Empty<ProductoListado>();
+        }
+    }
+
+    private async Task AbrirAgregar(ProductoListado p)
+    {
+        if (_idProveedor <= 0)
+        {
+            await MostrarFeedback("error", "Debe seleccionar un proveedor o seleccionar 'Ninguno'.");
+            return;
+        }
+
+        // El desktop no permite el mismo producto dos veces en el detalle de
+        // compra (a diferencia de ventas, que agrupa).
+        if (_detalle.Any(l => l.IdProducto == p.IdProducto))
+        {
+            await MostrarFeedback("error", "El producto ya esta en el detalle de compra.");
+            return;
+        }
+
+        _lineaEnEdicion = p;
+    }
+
+    private async Task AgregarAlDetalle((int Cantidad, decimal Precio) datos)
+    {
+        var p = _lineaEnEdicion;
+        _lineaEnEdicion = null;
+        if (p is null) return;
+
+        _detalle.Add(new LineaTicket
+        {
+            IdProducto = p.IdProducto,
+            Nombre = p.Nombre,
+            Cantidad = datos.Cantidad,
+            PrecioUnitario = datos.Precio
+        });
+
+        await MostrarFeedback("exito", $"{p.Nombre} agregado al detalle.");
+    }
+
+    private void QuitarLinea(int idx)
+    {
+        if (idx >= 0 && idx < _detalle.Count) _detalle.RemoveAt(idx);
+    }
+
+    private async Task CancelarCompra()
+    {
+        _detalle.Clear();
+        await CargarProductos();
+        await MostrarFeedback("info", "Compra cancelada.");
+    }
+
+    private async Task RegistrarCompra()
+    {
+        _confirmarCompra = false;
+
+        if (_detalle.Count == 0 || Total <= 0)
+        {
+            await MostrarFeedback("info", "No hay productos en la zona de compra.");
+            return;
+        }
+
+        if (_idProveedor <= 0)
+        {
+            await MostrarFeedback("error", "Debe seleccionar un proveedor o seleccionar 'Ninguno'.");
+            return;
+        }
+
+        _registrando = true;
+        try
+        {
+            await ComprasRepo.RegistrarCompraAsync(_idUsuario, _idProveedor, Total, _detalle.ToList());
+
+            _detalle.Clear();
+            await CargarProductos();
+            await MostrarFeedback("exito", "Compra registrada correctamente.");
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo registrar la compra: {ex.Message}");
+        }
+        finally
+        {
+            _registrando = false;
+        }
+    }
+
+    private async Task ConfirmarBaja()
+    {
+        var p = _bajaPendiente;
+        _bajaPendiente = null;
+        if (p is null) return;
+
+        try
+        {
+            var borradoFisico = await ProductosRepo.EliminarAsync(p.IdProducto);
+
+            // Si estaba en el detalle en curso hay que sacarlo: ya no existe
+            // o quedo inactivo, y el SP fallaria por la FK.
+            _detalle.RemoveAll(l => l.IdProducto == p.IdProducto);
+
+            await CargarProductos();
+            await MostrarFeedback("exito", borradoFisico
+                ? "Producto eliminado definitivamente."
+                : "Producto desactivado (tiene compras o ventas registradas).");
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo eliminar: {ex.Message}");
+        }
+    }
+
+    private void AbrirNuevoProducto() => _mostrarNuevoProducto = true;
+
+    // El desktop, al crear un producto desde compras, lo mete directo al detalle
+    // usando su Stock como cantidad y su PrecioCompra como precio unitario.
+    // OJO: el producto ya nace con ese Stock y la compra vuelve a sumarlo via
+    // trigger, asi que la existencia queda al doble. Se replica el
+    // comportamiento; ver la nota de la migracion.
+    private async Task NuevoProductoGuardado(int idProducto)
+    {
+        _mostrarNuevoProducto = false;
+        await CargarProductos();
+
+        if (idProducto <= 0)
+        {
+            await MostrarFeedback("exito", "Producto creado.");
+            return;
+        }
+
+        try
+        {
+            var p = await ProductosRepo.ObtenerPorIdAsync(idProducto);
+            if (p is null || _detalle.Any(l => l.IdProducto == idProducto))
+            {
+                await MostrarFeedback("exito", "Producto creado.");
+                return;
+            }
+
+            _detalle.Add(new LineaTicket
+            {
+                IdProducto = p.IdProducto,
+                Nombre = p.Nombre,
+                Cantidad = p.Stock,
+                PrecioUnitario = p.PrecioCompra
+            });
+
+            await MostrarFeedback("exito", $"{p.Nombre} creado y agregado al detalle.");
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"Producto creado, pero no se pudo agregar al detalle: {ex.Message}");
+        }
+    }
+
+    private async Task MostrarFeedback(string tipo, string mensaje)
+    {
+        _feedbackCts?.Cancel();
+        _feedbackCts = new CancellationTokenSource();
+        var token = _feedbackCts.Token;
+
+        _feedback = new FeedbackMsg(tipo, mensaje);
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+            if (!token.IsCancellationRequested)
+            {
+                _feedback = null;
+                StateHasChanged();
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Scanner.OnEscaneo -= OnEscaneo;
+        await Scanner.DetenerAsync();
+        _feedbackCts?.Cancel();
+    }
+
+    private record FeedbackMsg(string Tipo, string Mensaje);
+}

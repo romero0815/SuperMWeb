@@ -765,3 +765,40 @@ a.btn { text-decoration: none; display: inline-block; line-height: normal; }
 }
 .errores-importacion ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
 .errores-importacion li { margin-bottom: 0.2rem; }
+
+/* ---------------- Pantalla de compras ---------------- */
+
+.compra-layout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+    gap: 1rem;
+    align-items: start;
+}
+
+.compra-total {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    border-top: 1px solid #f0f4f8;
+    padding-top: 1rem;
+}
+.compra-total .label {
+    font-size: 0.85rem;
+    color: #52606d;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin: 0 0 0.2rem;
+}
+.compra-total .total {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #0d47a1;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+.compra-total .items-count { font-size: 0.85rem; color: #7b8a99; margin: 0.3rem 0 0; }
+
+.compra-botones { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.compra-botones .btn { padding: 0.75rem 1.25rem; }
