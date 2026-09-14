@@ -45,6 +45,7 @@ builder.Services.AddSingleton(new SqlConnectionFactory(connectionString));
 builder.Services.AddScoped<IProductosRepository, ProductosRepository>();
 builder.Services.AddScoped<IVentasRepository, VentasRepository>();
 builder.Services.AddScoped<IUsuariosRepository, UsuariosRepository>();
+builder.Services.AddScoped<IReportesRepository, ReportesRepository>();
 
 // Estado de venta, scanner y helpers de UI: Scoped por circuito Blazor.
 builder.Services.AddScoped<SuperMWeb.Services.VentaState>();

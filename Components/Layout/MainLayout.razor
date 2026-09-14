@@ -10,10 +10,16 @@
     <header class="kiosk-header">
         <div class="brand">@_negocio</div>
 
+        <NavMenu />
+
         <AuthorizeView>
             <Authorized>
                 <div class="user-block">
-                    <span>Cajero: <strong>@context.User.FindFirst("nombre")?.Value</strong></span>
+                    @* Equivale a lblBienvenida del MainForm: nombre y rol del usuario. *@
+                    <span>
+                        <strong>@context.User.FindFirst("nombre")?.Value</strong>
+                        <span class="rol">@context.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value</span>
+                    </span>
                     <form method="post" action="/api/logout" style="display:inline">
                         <input type="hidden" name="__RequestVerificationToken" value="@_logoutToken" />
                         <button type="submit" class="logout-btn">Cerrar sesion</button>

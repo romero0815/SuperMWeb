@@ -1,0 +1,154 @@
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@using SuperMWeb.Domain
+@inject IReportesRepository ReportesRepo
+@inject ITicketPrinter Printer
+@inject IConfiguration Config
+
+@* Equivalente de DetalleFacturaForm del desktop: muestra el detalle de una
+   factura de venta o de una compra y permite reimprimir el ticket. *@
+
+<div class="modal-backdrop" @onclick="Cerrar">
+    <div class="modal modal-ancho" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
+        <h2>@(EsCompra ? "Detalle compra" : "Detalle factura") # @Id</h2>
+
+        @if (_error is not null)
+        {
+            <div class="feedback error">@_error</div>
+        }
+
+        @if (_cargando)
+        {
+            <div class="cargando">Cargando detalle...</div>
+        }
+        else
+        {
+            <div class="tabla-scroll">
+                <table class="tabla">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Descripcion</th>
+                            <th class="numero">Precio</th>
+                            <th class="numero">Cant</th>
+                            <th class="numero">Subtotal</th>
+                            <th>Movimiento</th>
+                            <th>Observaciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_lineas.Count == 0)
+                        {
+                            <tr><td colspan="7" class="vacio-fila">Sin lineas para este documento.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var l in _lineas)
+                            {
+                                <tr>
+                                    <td>@l.NombreProducto</td>
+                                    <td>@l.DescripcionProducto</td>
+                                    <td class="numero">@l.Precio.ToString("C0")</td>
+                                    <td class="numero">@l.Cantidad</td>
+                                    <td class="numero">@l.Subtotal.ToString("C0")</td>
+                                    <td>@l.TipoMovimiento</td>
+                                    <td>@l.Observaciones</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                    @if (_lineas.Count > 0)
+                    {
+                        <tfoot>
+                            <tr>
+                                <td colspan="4">Total</td>
+                                <td class="numero">@_total.ToString("C0")</td>
+                                <td colspan="2"></td>
+                            </tr>
+                        </tfoot>
+                    }
+                </table>
+            </div>
+
+            <p class="pie-fecha">Fecha: @(_lineas.Count > 0 ? _lineas[0].Fecha.ToString("dd/MM/yyyy HH:mm") : "-")</p>
+
+            <div class="acciones">
+                <button class="btn-secondary" @onclick="Cerrar">Cerrar (Esc)</button>
+                <button class="btn-primary" disabled="@(_lineas.Count == 0 || _imprimiendo)" @onclick="Imprimir">
+                    @(_imprimiendo ? "Imprimiendo..." : "Imprimir")
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int Id { get; set; }
+    [Parameter] public bool EsCompra { get; set; }
+    [Parameter] public EventCallback OnCerrar { get; set; }
+
+    private List<LineaDocumento> _lineas = new();
+    private decimal _total;
+    private bool _cargando = true;
+    private bool _imprimiendo;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _cargando = true;
+        _error = null;
+        try
+        {
+            var lineas = await ReportesRepo.ListarDetalleDocumentoAsync(Id, EsCompra);
+            _lineas = lineas.ToList();
+            _total = _lineas.Sum(l => l.Subtotal);
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudo cargar el detalle: {ex.Message}";
+            _lineas = new List<LineaDocumento>();
+            _total = 0m;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task Imprimir()
+    {
+        _imprimiendo = true;
+        _error = null;
+        try
+        {
+            // Mismo armado que DetalleFacturaForm.btnImpimir_Click: se reconstruye
+            // el ticket desde las lineas visibles y se reenvia a la impresora.
+            var items = _lineas.Select(l => new LineaTicket
+            {
+                IdProducto = l.IdProducto,
+                Nombre = l.NombreProducto,
+                Cantidad = l.Cantidad,
+                PrecioUnitario = l.Precio
+            }).ToList();
+
+            var bytes = TicketBuilder.ConstruirFactura(items, _total, Config["Negocio:Nombre"] ?? string.Empty);
+            var res = await Printer.ImprimirAsync(bytes);
+            if (!res.Exitoso) _error = $"Fallo la impresion: {res.MensajeError}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error al imprimir: {ex.Message}";
+        }
+        finally
+        {
+            _imprimiendo = false;
+        }
+    }
+
+    private Task Cerrar() => OnCerrar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnCerrar.InvokeAsync();
+    }
+}

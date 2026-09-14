@@ -1,0 +1,126 @@
+@page "/reportes/ganancias"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@inject IReportesRepository ReportesRepo
+@inject NavigationManager Nav
+
+@* Equivalente de ReporteGananciasForm del desktop.
+   OJO: la ganancia se calcula contra el PrecioCompra ACTUAL del producto, no
+   contra el historico de cada venta. Es intencional (R8/R14 del inventario):
+   RegistrarCompra sobrescribe PrecioCompra con el ultimo precio pagado. *@
+
+<PageTitle>Ganancias - SuperM</PageTitle>
+
+<div class="pagina">
+
+    <div class="pagina-header">
+        <h1>Reporte de ganancias</h1>
+        <div class="acciones">
+            <button class="btn btn-secundario" @onclick="@(() => Nav.NavigateTo("/reportes"))">Volver a reportes</button>
+        </div>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="feedback error">@_error</div>
+    }
+
+    <section class="panel">
+        <div class="panel-barra">
+            <div class="filtros">
+                <div class="campo">
+                    <label for="gDesde">Desde</label>
+                    <input id="gDesde" type="date" @bind="_desde" @bind:after="Cargar" />
+                </div>
+                <div class="campo">
+                    <label for="gHasta">Hasta</label>
+                    <input id="gHasta" type="date" @bind="_hasta" @bind:after="Cargar" />
+                </div>
+            </div>
+
+            <div class="tarjeta venta" style="min-width:220px">
+                <p class="titulo">Ganancia del periodo</p>
+                <div class="valor">@_filas.Sum(f => f.Ganancia).ToString("C0")</div>
+            </div>
+        </div>
+
+        <div class="tabla-scroll">
+            <table class="tabla">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th class="numero">Cant. vendida</th>
+                        <th class="numero">P. venta</th>
+                        <th class="numero">Total ventas</th>
+                        <th class="numero">P. compra</th>
+                        <th class="numero">Total costos</th>
+                        <th class="numero">Ganancia</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_filas.Count == 0)
+                    {
+                        <tr><td colspan="7" class="vacio-fila">Sin ventas en el periodo seleccionado.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var f in _filas)
+                        {
+                            <tr>
+                                <td>@f.Producto</td>
+                                <td class="numero">@f.CantidadVendida</td>
+                                <td class="numero">@f.PrecioVentaProducto.ToString("C0")</td>
+                                <td class="numero">@f.TotalVentas.ToString("C0")</td>
+                                <td class="numero">@f.PrecioCompraProducto.ToString("C0")</td>
+                                <td class="numero">@f.TotalCostos.ToString("C0")</td>
+                                <td class="numero">@f.Ganancia.ToString("C0")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+                @if (_filas.Count > 0)
+                {
+                    <tfoot>
+                        <tr>
+                            <td colspan="3">Totales (@_filas.Count productos)</td>
+                            <td class="numero">@_filas.Sum(f => f.TotalVentas).ToString("C0")</td>
+                            <td></td>
+                            <td class="numero">@_filas.Sum(f => f.TotalCostos).ToString("C0")</td>
+                            <td class="numero">@_filas.Sum(f => f.Ganancia).ToString("C0")</td>
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        </div>
+
+        <p class="nota">
+            La ganancia usa el precio de compra actual de cada producto (el ultimo pagado al proveedor),
+            no el precio vigente al momento de cada venta.
+        </p>
+    </section>
+</div>
+
+@code {
+    private List<FilaGanancia> _filas = new();
+    private DateTime _desde = DateTime.Today;
+    private DateTime _hasta = DateTime.Today;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => Cargar();
+
+    private async Task Cargar()
+    {
+        _error = null;
+        try
+        {
+            var filas = await ReportesRepo.ListarGananciasEntreAsync(_desde.Date, _hasta.Date.AddDays(1));
+            _filas = filas.ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudo cargar el reporte: {ex.Message}";
+            _filas = new List<FilaGanancia>();
+        }
+    }
+}
