@@ -967,3 +967,6 @@ a.btn { text-decoration: none; display: inline-block; line-height: normal; }
     background: #fff;
 }
 .paginador-tamano select:focus { border-color: #1976d2; outline: none; }
+
+/* Texto de ayuda bajo un campo de formulario */
+.campo-form .campo-ayuda { font-size: 0.78rem; color: #7b8a99; line-height: 1.35; }

@@ -299,14 +299,13 @@
         _mostrarFormulario = true;
     }
 
-    private async Task ProductoGuardado(int idProducto)
+    private async Task ProductoGuardado(ProductoDialog.Resultado resultado)
     {
-        var eraEdicion = _idEnEdicion > 0;
         _mostrarFormulario = false;
         await Cargar();
-        await MostrarFeedback("exito", eraEdicion
-            ? "Producto actualizado correctamente."
-            : "Producto creado correctamente.");
+        await MostrarFeedback("exito", resultado.EsAlta
+            ? "Producto creado correctamente."
+            : "Producto actualizado correctamente.");
     }
 
     private void PedirBaja(ProductoListado p) => _bajaPendiente = p;

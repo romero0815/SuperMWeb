@@ -5,7 +5,11 @@
 @inject IProveedoresRepository ProveedoresRepo
 
 @* Equivalente de FrmProductosForm del desktop: alta y edicion de un producto
-   con las mismas validaciones. *@
+   con las mismas validaciones.
+
+   En ModoCompra el producto se da de alta con Stock = 0 y la cantidad digitada
+   se devuelve al llamador para que entre como linea de la compra. Asi el stock
+   lo sube una sola vez el trigger de MovimientosInventario. Ver R19. *@
 
 <div class="modal-backdrop" @onclick="Cancelar">
     <div class="modal modal-form" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
@@ -48,8 +52,12 @@
             </div>
 
             <div class="campo-form">
-                <label for="pStock">Stock *</label>
+                <label for="pStock">@(ModoCompra ? "Cantidad a comprar *" : "Stock *")</label>
                 <input id="pStock" inputmode="numeric" @bind="_stock" @bind:event="oninput" autocomplete="off" />
+                @if (ModoCompra)
+                {
+                    <span class="campo-ayuda">Entra como linea de la compra; el producto se crea en cero.</span>
+                }
             </div>
 
             <div class="campo-form">
@@ -76,10 +84,17 @@
     // 0 = alta. Cualquier otro valor carga ese producto para editarlo.
     [Parameter] public int IdProducto { get; set; }
 
-    // Emite el IdProducto resultante: el recien creado en un alta, o el mismo
-    // que entro al editar. La pantalla de compras lo necesita para agregar el
-    // producto al detalle sin volver a consultarlo.
-    [Parameter] public EventCallback<int> OnGuardado { get; set; }
+    // Alta desde la pantalla de compras: el campo Stock pasa a significar
+    // "cantidad a comprar", el producto se crea con Stock = 0 y esa cantidad
+    // vuelve en el resultado para que la compra la registre. Sin esto el stock
+    // se contaba dos veces (R19).
+    [Parameter] public bool ModoCompra { get; set; }
+
+    // Emite el producto guardado: el id recien creado en un alta, o el mismo
+    // que entro al editar, mas la cantidad digitada.
+    [Parameter] public EventCallback<Resultado> OnGuardado { get; set; }
+
+    public record Resultado(int IdProducto, int Cantidad, bool EsAlta);
     [Parameter] public EventCallback OnCancelar { get; set; }
 
     private bool EsEdicion => IdProducto > 0;
@@ -163,6 +178,13 @@
         _guardando = true;
         try
         {
+            var cantidad = int.Parse(_stock.Trim());
+
+            // En un alta desde compras el producto nace en cero: las unidades
+            // las suma el trigger cuando se registre la compra. Si se guardara
+            // con la cantidad digitada, la existencia quedaria al doble (R19).
+            var esAltaDesdeCompra = ModoCompra && !EsEdicion;
+
             var producto = new Producto
             {
                 IdProducto = IdProducto,
@@ -170,7 +192,7 @@
                 Descripcion = string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim(),
                 PrecioCompra = FormatosTexto.ParseDecimal(_precioCompra.Trim()),
                 PrecioVenta = FormatosTexto.ParseDecimal(_precioVenta.Trim()),
-                Stock = int.Parse(_stock.Trim()),
+                Stock = esAltaDesdeCompra ? 0 : cantidad,
                 IdProveedor = _idProveedor,
                 CodigoBarras = string.IsNullOrWhiteSpace(_codigoBarras) ? null : _codigoBarras.Trim()
             };
@@ -190,7 +212,7 @@
                 idResultante = await ProductosRepo.CrearAsync(producto);
             }
 
-            await OnGuardado.InvokeAsync(idResultante);
+            await OnGuardado.InvokeAsync(new Resultado(idResultante, cantidad, !EsEdicion));
         }
         catch (Exception ex)
         {
@@ -210,21 +232,25 @@
         var precioV = _precioVenta.Trim();
         var stock = _stock.Trim();
 
+        // En ModoCompra el campo se rotula "Cantidad a comprar"; los mensajes
+        // acompanan para que no hablen de stock cuando el usuario ve otra cosa.
+        var campo = ModoCompra ? "La cantidad a comprar" : "El stock del producto";
+
         if (nombre.Length == 0) return "El nombre del producto es obligatorio.";
         if (precioC.Length == 0) return "El precio de compra del producto es obligatorio.";
         if (precioV.Length == 0) return "El precio de venta del producto es obligatorio.";
-        if (stock.Length == 0) return "El stock del producto es obligatorio.";
+        if (stock.Length == 0) return $"{campo} es obligatorio.";
 
         if (!FormatosTexto.IsNumberDecimal(precioV)) return "El precio de venta del producto debe ser numerico.";
         if (!FormatosTexto.IsNumberDecimal(precioC)) return "El precio de compra del producto debe ser numerico.";
-        if (!FormatosTexto.IsNumber(stock)) return "El stock del producto debe ser numerico.";
+        if (!FormatosTexto.IsNumber(stock)) return $"{campo} debe ser numerico.";
 
         if (FormatosTexto.ParseDecimal(precioV) <= 0)
             return "El precio de venta del producto no puede ser negativo o cero (0).";
         if (FormatosTexto.ParseDecimal(precioC) <= 0)
             return "El precio de compra del producto no puede ser negativo o cero (0).";
         if (int.Parse(stock) <= 0)
-            return "El stock del producto no puede ser negativo o cero (0).";
+            return $"{campo} no puede ser negativo o cero (0).";
 
         // El desktop solo valida el duplicado al crear. Aqui tambien se valida
         // al editar, excluyendo el propio producto: sin eso, editar cualquier
