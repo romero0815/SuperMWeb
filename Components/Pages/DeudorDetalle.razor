@@ -1,0 +1,280 @@
+@page "/deudores/{IdDeudor:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@using SuperMWeb.Components.Dialogs
+@inject IDeudoresRepository DeudoresRepo
+@inject NavigationManager Nav
+
+@* Equivalente de DeudorMovimientoForm del desktop: estado de cuenta de un
+   deudor con cargos, abonos y saldo. El saldo se calcula sobre todo el
+   historico; los totales de cargos y abonos, solo sobre el rango filtrado. *@
+
+<PageTitle>Estado de cuenta - SuperM</PageTitle>
+
+<div class="pagina">
+
+    <div class="pagina-header">
+        <h1>Estado de cuenta</h1>
+        <div class="acciones">
+            <button class="btn btn-secundario" @onclick="@(() => Nav.NavigateTo("/deudores"))">Volver</button>
+            <button class="btn btn-primario" @onclick="() => _mostrarDeuda = true">Agregar deuda</button>
+            <button class="btn btn-exito" @onclick="() => _mostrarAbono = true">Abonar</button>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="feedback @_feedback.Tipo">@_feedback.Mensaje</div>
+    }
+
+    @if (_deudor is null)
+    {
+        <div class="panel"><p class="cargando">@(_cargando ? "Cargando..." : "No se encontro el deudor.")</p></div>
+    }
+    else
+    {
+        <section class="panel">
+            <h2>@_deudor.NombreCliente</h2>
+            <p class="datos-deudor">
+                Identificacion: <strong>@(_deudor.Identificacion ?? "N/A")</strong>
+                <span class="sep">|</span>
+                Telefono: <strong>@(_deudor.Telefono ?? "N/A")</strong>
+                <span class="sep">|</span>
+                Cupo maximo: <strong>@(_deudor.CupoMaximo is null ? "Sin limite" : _deudor.CupoMaximo.Value.ToString("C0"))</strong>
+                @if (!string.IsNullOrWhiteSpace(_deudor.Observaciones))
+                {
+                    <span class="sep">|</span>
+                    <text>Obs: <strong>@_deudor.Observaciones</strong></text>
+                }
+            </p>
+        </section>
+
+        <div class="tarjetas">
+            <div class="tarjeta compra">
+                <p class="titulo">Cargos del periodo</p>
+                <div class="valor">@_movimientos.Where(m => !m.Anulado && m.EsCargo).Sum(m => m.Valor).ToString("C0")</div>
+            </div>
+            <div class="tarjeta venta">
+                <p class="titulo">Abonos del periodo</p>
+                <div class="valor">@_movimientos.Where(m => !m.Anulado && !m.EsCargo).Sum(m => m.Valor).ToString("C0")</div>
+            </div>
+            <div class="tarjeta @(_saldo > 0 ? "compra" : "venta")">
+                <p class="titulo">Saldo total</p>
+                <div class="valor">@_saldo.ToString("C0")</div>
+            </div>
+        </div>
+
+        <section class="panel">
+            <div class="filtros">
+                <div class="campo">
+                    <label for="mDesde">Desde</label>
+                    <input id="mDesde" type="date" @bind="_desde" @bind:after="CargarMovimientos" />
+                </div>
+                <div class="campo">
+                    <label for="mHasta">Hasta</label>
+                    <input id="mHasta" type="date" @bind="_hasta" @bind:after="CargarMovimientos" />
+                </div>
+                <label class="check-inline">
+                    <input type="checkbox" @bind="_verAnulados" @bind:after="CargarMovimientos" />
+                    Ver anulados
+                </label>
+            </div>
+
+            <div class="tabla-scroll">
+                <table class="tabla">
+                    <thead>
+                        <tr>
+                            <th class="numero">N&deg;</th>
+                            <th>Fecha</th>
+                            <th>Movimiento</th>
+                            <th class="numero">Valor</th>
+                            <th>Descripcion</th>
+                            <th>Usuario</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_movimientos.Count == 0)
+                        {
+                            <tr><td colspan="7" class="vacio-fila">Sin movimientos en el periodo.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var m in _movimientos)
+                            {
+                                <tr class="@(m.Anulado ? "fila-anulada" : null)">
+                                    <td class="numero">@m.IdMovimiento</td>
+                                    <td>@m.Fecha.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td>@m.Etiqueta</td>
+                                    <td class="numero @(m.Anulado ? null : m.EsCargo ? "valor-cargo" : "valor-abono")">
+                                        @m.Valor.ToString("C0")
+                                    </td>
+                                    <td>@m.Descripcion</td>
+                                    <td>@m.Usuario</td>
+                                    <td>
+                                        @if (!m.Anulado)
+                                        {
+                                            <button class="btn btn-peligro btn-mini"
+                                                    @onclick="() => _anularPendiente = m">Anular</button>
+                                        }
+                                        else
+                                        {
+                                            <span class="etiqueta-anulado">Anulado</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="nota">
+                Anular un movimiento no lo borra: lo marca y lo saca del calculo del saldo.
+            </p>
+        </section>
+    }
+</div>
+
+@if (_mostrarDeuda)
+{
+    <DeudorDialog IdDeudor="IdDeudor"
+                  OnGuardado="DeudaGuardada"
+                  OnCancelar="() => _mostrarDeuda = false" />
+}
+
+@if (_mostrarAbono)
+{
+    <AbonoDialog IdDeudor="IdDeudor"
+                 OnGuardado="AbonoGuardado"
+                 OnCancelar="() => _mostrarAbono = false" />
+}
+
+@if (_anularPendiente is not null)
+{
+    <ConfirmDialog Titulo="Anular movimiento"
+                   Mensaje="@($"Deseas anular el {_anularPendiente.Etiqueta.ToLower()} de {_anularPendiente.Valor.ToString("C0")}? El saldo del deudor sera recalculado.")"
+                   Peligro="true"
+                   OnAceptar="ConfirmarAnulacion"
+                   OnCancelar="() => _anularPendiente = null" />
+}
+
+@code {
+    [Parameter] public int IdDeudor { get; set; }
+
+    private DeudorListado? _deudor;
+    private IReadOnlyList<MovimientoDeudor> _movimientos = Array.Empty<MovimientoDeudor>();
+    private decimal _saldo;
+
+    private DateTime _desde = DateTime.Today.AddMonths(-1);
+    private DateTime _hasta = DateTime.Today;
+    private bool _verAnulados;
+    private bool _cargando = true;
+
+    private bool _mostrarDeuda;
+    private bool _mostrarAbono;
+    private MovimientoDeudor? _anularPendiente;
+
+    private FeedbackMsg? _feedback;
+    private CancellationTokenSource? _feedbackCts;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _cargando = true;
+        try
+        {
+            _deudor = await DeudoresRepo.ObtenerAsync(IdDeudor);
+
+            // El desktop arranca el filtro en la fecha de creacion del deudor
+            // para que se vea el historico completo.
+            if (_deudor is not null) _desde = _deudor.FechaCreacion.Date;
+
+            await CargarMovimientos();
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo cargar el deudor: {ex.Message}");
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private async Task CargarMovimientos()
+    {
+        if (_desde.Date > _hasta.Date)
+        {
+            await MostrarFeedback("error", "La fecha inicial no puede ser mayor a la fecha final.");
+            return;
+        }
+
+        try
+        {
+            _movimientos = await DeudoresRepo.ListarMovimientosAsync(IdDeudor, _desde, _hasta, _verAnulados);
+            _saldo = await DeudoresRepo.ObtenerSaldoAsync(IdDeudor);
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudieron cargar los movimientos: {ex.Message}");
+            _movimientos = Array.Empty<MovimientoDeudor>();
+        }
+    }
+
+    private async Task DeudaGuardada(string mensaje)
+    {
+        _mostrarDeuda = false;
+        _deudor = await DeudoresRepo.ObtenerAsync(IdDeudor);
+        await CargarMovimientos();
+        await MostrarFeedback("exito", mensaje);
+    }
+
+    private async Task AbonoGuardado(string mensaje)
+    {
+        _mostrarAbono = false;
+        await CargarMovimientos();
+        await MostrarFeedback("exito", mensaje);
+    }
+
+    private async Task ConfirmarAnulacion()
+    {
+        var m = _anularPendiente;
+        _anularPendiente = null;
+        if (m is null) return;
+
+        try
+        {
+            await DeudoresRepo.AnularMovimientoAsync(m.IdMovimiento);
+            await CargarMovimientos();
+            await MostrarFeedback("exito", "Movimiento anulado correctamente.");
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo anular: {ex.Message}");
+        }
+    }
+
+    private async Task MostrarFeedback(string tipo, string mensaje)
+    {
+        _feedbackCts?.Cancel();
+        _feedbackCts = new CancellationTokenSource();
+        var token = _feedbackCts.Token;
+
+        _feedback = new FeedbackMsg(tipo, mensaje);
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+            if (!token.IsCancellationRequested)
+            {
+                _feedback = null;
+                StateHasChanged();
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private record FeedbackMsg(string Tipo, string Mensaje);
+}

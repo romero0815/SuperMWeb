@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace SuperMWeb.Application;
@@ -68,5 +69,19 @@ public static class FormatosTexto
         {
             return false;
         }
+    }
+
+    // Convierte un valor ya validado con IsNumberDecimal (digitos y coma
+    // decimal opcional) sin depender de la cultura de la maquina.
+    // Portado de Utils.ParseValorMoneda del desktop, que lo uso el modulo
+    // de deudores para no romperse si la caja cambiaba de cultura.
+    public static decimal ParseValorMoneda(string valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor)) return 0m;
+
+        var normalizado = valor.Trim().Replace(",", ".");
+        return decimal.TryParse(normalizado, NumberStyles.Number, CultureInfo.InvariantCulture, out var resultado)
+            ? resultado
+            : 0m;
     }
 }

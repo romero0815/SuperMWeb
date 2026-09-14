@@ -1,0 +1,187 @@
+@rendermode InteractiveServer
+@using System.Globalization
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using SuperMWeb.Application
+@inject IDeudoresRepository DeudoresRepo
+@inject AuthenticationStateProvider Auth
+@inject IJSRuntime JS
+
+@* Equivalente de FrmAgregarAbono del desktop: registra un movimiento de tipo
+   'A' contra la deuda del cliente. El abono no puede superar el saldo. *@
+
+<div class="modal-backdrop" @onclick="Cancelar">
+    <div class="modal modal-form" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
+        <h2>Registrar abono</h2>
+
+        <div class="resumen">
+            <div class="fila"><span>Cliente</span><strong>@_nombreCliente</strong></div>
+            <div class="fila total-fila"><span>Saldo actual</span><span>@_saldoActual.ToString("C0")</span></div>
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="feedback error">@_error</div>
+        }
+
+        @if (_sinSaldo)
+        {
+            <p class="confirm-texto">Este deudor no tiene saldo pendiente.</p>
+            <div class="acciones">
+                <button class="btn-secondary" @onclick="Cancelar">Cerrar (Esc)</button>
+            </div>
+        }
+        else if (_confirmacion is not null)
+        {
+            <p class="confirm-texto">@_confirmacion</p>
+            <div class="acciones">
+                <button class="btn-secondary" @onclick="() => _confirmacion = null">Volver</button>
+                <button class="btn-primary" disabled="@_guardando" @onclick="GuardarConfirmado">
+                    @(_guardando ? "Guardando..." : "Confirmar abono")
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="form-rejilla">
+                <div class="campo-form">
+                    <label for="abValor">Valor del abono *</label>
+                    <input id="abValor" inputmode="decimal" @bind="_valor" @bind:event="oninput" autocomplete="off" />
+                </div>
+                <div class="campo-form">
+                    <label for="abDesc">Descripcion</label>
+                    <input id="abDesc" @bind="_descripcion" @bind:event="oninput" autocomplete="off" />
+                </div>
+            </div>
+
+            <p class="nota">Saldo despues del abono: <strong>@SaldoResultante.ToString("C0")</strong></p>
+
+            <div class="acciones">
+                <button class="btn-secondary" @onclick="Cancelar">Cancelar (Esc)</button>
+                <button class="btn-secondary" @onclick="AbonarTodo">Abonar todo</button>
+                <button class="btn-primary" @onclick="Guardar">Registrar (Enter)</button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int IdDeudor { get; set; }
+    [Parameter] public EventCallback<string> OnGuardado { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private string _nombreCliente = string.Empty;
+    private decimal _saldoActual;
+    private bool _sinSaldo;
+
+    private string _valor = string.Empty;
+    private string _descripcion = string.Empty;
+    private string? _confirmacion;
+    private bool _guardando;
+    private string? _error;
+    private string? _usuario;
+
+    private decimal SaldoResultante
+    {
+        get
+        {
+            var monto = FormatosTexto.IsNumberDecimal(_valor.Trim())
+                ? FormatosTexto.ParseValorMoneda(_valor.Trim())
+                : 0m;
+            return _saldoActual - monto;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await Auth.GetAuthenticationStateAsync();
+        _usuario = auth.User.FindFirst(ClaimTypes.Name)?.Value;
+
+        try
+        {
+            var d = await DeudoresRepo.ObtenerAsync(IdDeudor);
+            if (d is null)
+            {
+                _error = "El deudor ya no existe.";
+                _sinSaldo = true;
+                return;
+            }
+
+            _nombreCliente = d.NombreCliente;
+            _saldoActual = d.Saldo;
+            _sinSaldo = _saldoActual <= 0;
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudo cargar el deudor: {ex.Message}";
+            _sinSaldo = true;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_sinSaldo)
+        {
+            await JS.InvokeVoidAsync("eval",
+                "setTimeout(() => { const el = document.getElementById('abValor'); if (el) { el.focus(); el.select(); } }, 30)");
+        }
+    }
+
+    // Se escribe con coma decimal para que pase la validacion de IsNumberDecimal.
+    private void AbonarTodo() =>
+        _valor = _saldoActual.ToString("0.##", CultureInfo.InvariantCulture).Replace(".", ",");
+
+    private void Guardar()
+    {
+        _error = null;
+
+        // Mismas reglas que FrmAgregarAbono.aplicarValidaciones.
+        var valor = _valor.Trim();
+
+        if (valor.Length == 0) { _error = "El valor del abono es obligatorio."; return; }
+        if (!FormatosTexto.IsNumberDecimal(valor)) { _error = "El valor del abono debe ser numerico."; return; }
+
+        var monto = FormatosTexto.ParseValorMoneda(valor);
+        if (monto <= 0) { _error = "El valor del abono debe ser mayor a cero (0)."; return; }
+
+        // El abono no puede dejar el saldo en negativo.
+        if (monto > _saldoActual)
+        {
+            _error = $"El abono no puede ser mayor al saldo pendiente ({_saldoActual.ToString("C0")}).";
+            return;
+        }
+
+        _confirmacion = $"Deseas registrar el abono de {monto.ToString("C0")}?";
+    }
+
+    private async Task GuardarConfirmado()
+    {
+        _guardando = true;
+        try
+        {
+            var monto = FormatosTexto.ParseValorMoneda(_valor.Trim());
+            await DeudoresRepo.RegistrarAbonoAsync(IdDeudor, monto, _descripcion, _usuario);
+
+            var restante = _saldoActual - monto;
+            await OnGuardado.InvokeAsync(
+                $"Abono registrado correctamente. Saldo restante: {restante.ToString("C0")}");
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudo registrar el abono: {ex.Message}";
+            _confirmacion = null;
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    private Task Cancelar() => OnCancelar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnCancelar.InvokeAsync();
+        else if (e.Key == "Enter" && !_sinSaldo && _confirmacion is null) Guardar();
+    }
+}

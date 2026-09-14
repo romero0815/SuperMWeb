@@ -49,6 +49,7 @@ builder.Services.AddScoped<IUsuariosRepository, UsuariosRepository>();
 builder.Services.AddScoped<IReportesRepository, ReportesRepository>();
 builder.Services.AddScoped<IProveedoresRepository, ProveedoresRepository>();
 builder.Services.AddScoped<IComprasRepository, ComprasRepository>();
+builder.Services.AddScoped<IDeudoresRepository, DeudoresRepository>();
 builder.Services.AddScoped<IProductosExcel, ProductosExcel>();
 
 // Estado de venta, scanner y helpers de UI: Scoped por circuito Blazor.

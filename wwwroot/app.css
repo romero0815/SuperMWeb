@@ -802,3 +802,94 @@ a.btn { text-decoration: none; display: inline-block; line-height: normal; }
 
 .compra-botones { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .compra-botones .btn { padding: 0.75rem 1.25rem; }
+
+/* ---------------- Modulo de deudores ---------------- */
+
+.check-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.95rem;
+    color: #3e4c59;
+    padding-bottom: 0.5rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.check-inline input { width: 1.05rem; height: 1.05rem; cursor: pointer; }
+
+.tabla td.saldo { font-weight: 700; color: #1f2933; }
+.tabla td.saldo-excedido { font-weight: 700; color: #b32121; }
+
+.tabla tr.fila-anulada td {
+    color: #9aa5b1;
+    text-decoration: line-through;
+}
+.tabla td.valor-cargo { font-weight: 700; color: #b32121; }
+.tabla td.valor-abono { font-weight: 700; color: #1b5e20; }
+
+.etiqueta-anulado {
+    font-size: 0.78rem;
+    color: #9aa5b1;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.datos-deudor { margin: 0; color: #52606d; font-size: 0.95rem; line-height: 1.6; }
+.datos-deudor .sep { margin: 0 0.5rem; color: #cbd2d9; }
+
+.grupo-campos {
+    border: 1px solid #e4e7eb;
+    border-radius: 6px;
+    padding: 0.85rem 1rem 0.25rem;
+    margin: 0 0 1.25rem;
+}
+.grupo-campos legend {
+    font-size: 0.8rem;
+    color: #52606d;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 0.4rem;
+}
+
+.acciones-inline {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+}
+
+.modal .resumen .total-fila.excede { color: #b32121; }
+
+.lista-clientes { max-height: 240px; overflow: auto; margin-bottom: 1rem; }
+.lista-clientes tbody tr { cursor: pointer; }
+.lista-clientes tbody tr.seleccionada {
+    background: #e3f2fd;
+    box-shadow: inset 3px 0 0 #1976d2;
+}
+
+.panel-nuevo {
+    background: #f9fafb;
+    border: 1px solid #e4e7eb;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+.panel-nuevo .panel-barra { margin-bottom: 0.75rem; }
+
+/* Boton de fiar en la pantalla de venta */
+.venta-totales .btn-fiar {
+    padding: 0.8rem;
+    font-size: 1rem;
+    font-weight: 700;
+    background: #ef6c00;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+}
+.venta-totales .btn-fiar:hover:enabled { background: #e65100; }
+.venta-totales .btn-fiar:disabled {
+    background: #cfd8dc;
+    color: #90a4ae;
+    cursor: not-allowed;
+}
