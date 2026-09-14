@@ -22,12 +22,82 @@
 
 <div class="venta-layout" tabindex="0" @onkeydown="OnKeyDown">
 
+  <div class="venta-principal">
+
+    @* Catalogo: alternativa al lector. Si el escaner se dana o no esta
+       disponible, el cajero busca por nombre y agrega con el boton, igual
+       que la grilla superior de VentasForm en el escritorio. *@
+    <section class="venta-catalogo">
+        <div class="catalogo-barra">
+            <div class="campo-busqueda">
+                <label for="txtBuscarProducto">Buscar producto por nombre</label>
+                <input id="txtBuscarProducto"
+                       @bind="_filtroCatalogo" @bind:event="oninput" @bind:after="BuscarEnCatalogo"
+                       placeholder="Escribe parte del nombre" autocomplete="off" />
+            </div>
+            @if (_filtroCatalogo.Length > 0)
+            {
+                <button class="btn btn-secundario btn-mini" @onclick="LimpiarCatalogo">Limpiar</button>
+            }
+        </div>
+
+        <div class="tabla-scroll catalogo-tabla">
+            <table class="tabla">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th>Descripcion</th>
+                        <th class="numero">P. venta</th>
+                        <th class="numero">Stock</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_catalogo.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="vacio-fila">
+                                @(_filtroCatalogo.Length > 0
+                                    ? "Ningun producto coincide con la busqueda."
+                                    : "Sin productos con existencia.")
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var p in _paginaCatalogo)
+                        {
+                            <tr>
+                                <td>@p.Nombre</td>
+                                <td>@p.Descripcion</td>
+                                <td class="numero">@p.PrecioVenta.ToString("C0")</td>
+                                <td class="numero"><span class="stock-pill @ClaseStock(p.Stock)">@p.Stock</span></td>
+                                <td>
+                                    <button class="btn btn-exito btn-mini" @onclick="() => AgregarDesdeCatalogo(p)">
+                                        Agregar
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <Paginador TotalFilas="_catalogo.Count"
+                   Pagina="_paginaCatalogoActual"
+                   TamanoPagina="_tamanoCatalogo"
+                   Tamanos="@(new[] { 5, 10, 25, 50 })"
+                   OnCambiarPagina="(int p) => _paginaCatalogoActual = p"
+                   OnCambiarTamano="CambiarTamanoCatalogo" />
+    </section>
+
     <section class="venta-detalle">
         @if (State.Items.Count == 0)
         {
             <div class="vacio">
                 <strong>Listo para vender</strong>
-                Escanea un producto para empezar.
+                Escanea un producto o buscalo arriba y pulsa Agregar.
             </div>
         }
         else
@@ -60,6 +130,7 @@
             </table>
         }
     </section>
+  </div>
 
     <aside class="venta-totales">
         @if (_feedback is not null)
@@ -71,6 +142,28 @@
             <p class="label">Total</p>
             <div class="total">@State.Total.ToString("C0")</div>
             <p class="items-count">@State.Items.Count item(s)</p>
+        </div>
+
+        @* Dinero recibido y cambio siempre a la vista, como en el escritorio:
+           el cajero digita mientras el cliente le entrega el efectivo, sin
+           tener que abrir el dialogo de cobro. *@
+        <div class="cobro-rapido">
+            <label for="txtRecibidoVenta" class="label">Dinero recibido</label>
+            <input id="txtRecibidoVenta"
+                   inputmode="numeric"
+                   @bind="_recibidoTexto" @bind:event="oninput" @bind:after="ActualizarRecibido"
+                   placeholder="0"
+                   autocomplete="off" />
+
+            <p class="label">Cambio</p>
+            @if (Faltante > 0)
+            {
+                <div class="cambio-grande faltante">Faltan @Faltante.ToString("C0")</div>
+            }
+            else
+            {
+                <div class="cambio-grande">@State.Cambio.ToString("C0")</div>
+            }
         </div>
 
         <button class="btn-cobrar" disabled="@(State.Items.Count == 0)" @onclick="AbrirCobro">
@@ -97,6 +190,7 @@
 @if (_mostrarCobro)
 {
     <CobroDialog Total="State.Total"
+                 RecibidoInicial="State.DineroRecibido"
                  OnConfirmar="ConfirmarCobro"
                  OnCancelar="() => _mostrarCobro = false" />
 }
@@ -122,6 +216,19 @@
     private bool _mostrarCantidad;
     private bool _mostrarFiar;
     private string? _usuario;
+
+    // Catalogo de respaldo cuando no hay lector
+    private IReadOnlyList<ProductoListado> _catalogo = Array.Empty<ProductoListado>();
+    private string _filtroCatalogo = string.Empty;
+    private int _paginaCatalogoActual = 1;
+    private int _tamanoCatalogo = 5;
+
+    private IEnumerable<ProductoListado> _paginaCatalogo =>
+        _catalogo.Skip((_paginaCatalogoActual - 1) * _tamanoCatalogo).Take(_tamanoCatalogo);
+
+    // Dinero recibido en la barra lateral
+    private string _recibidoTexto = string.Empty;
+    private decimal Faltante => Math.Max(0m, State.Total - State.DineroRecibido);
     private FeedbackMsg? _feedback;
     private CancellationTokenSource? _feedbackCts;
     private int _idUsuario;
@@ -136,7 +243,56 @@
         _usuario = auth.User.FindFirst(ClaimTypes.Name)?.Value;
 
         State.OnCambio += OnVentaCambio;
+
+        await CargarCatalogo();
     }
+
+    // Sin busqueda muestra solo lo que tiene existencia; con busqueda respeta
+    // el criterio del escritorio y lista todos los activos que coincidan, de
+    // modo que un producto en cero igual aparece y avisa al intentar agregarlo.
+    private async Task CargarCatalogo()
+    {
+        try
+        {
+            var conFiltro = _filtroCatalogo.Trim().Length > 0;
+            _catalogo = await ProductosRepo.ListarAsync(
+                filtroNombre: conFiltro ? _filtroCatalogo.Trim() : null,
+                limite: conFiltro ? null : 250,
+                soloConStock: !conFiltro);
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo cargar el catalogo: {ex.Message}");
+            _catalogo = Array.Empty<ProductoListado>();
+        }
+    }
+
+    private async Task BuscarEnCatalogo()
+    {
+        _paginaCatalogoActual = 1;
+        await CargarCatalogo();
+    }
+
+    private async Task LimpiarCatalogo()
+    {
+        _filtroCatalogo = string.Empty;
+        _paginaCatalogoActual = 1;
+        await CargarCatalogo();
+    }
+
+    private void CambiarTamanoCatalogo(int tamano)
+    {
+        _tamanoCatalogo = tamano;
+        var total = Math.Max(1, (int)Math.Ceiling(_catalogo.Count / (double)_tamanoCatalogo));
+        if (_paginaCatalogoActual > total) _paginaCatalogoActual = total;
+    }
+
+    private static string ClaseStock(int stock) => stock <= 5 ? "bajo" : stock <= 10 ? "medio" : "alto";
+
+    // Agregar desde el catalogo pasa por la misma ruta que el escaneo, para que
+    // la validacion de stock y la union de lineas sean identicas.
+    private Task AgregarDesdeCatalogo(ProductoListado p) =>
+        AgregarAlDetalleAsync(p.IdProducto, p.Nombre, p.PrecioVenta);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -186,22 +342,33 @@
             return;
         }
 
+        await AgregarAlDetalleAsync(p.IdProducto, p.Nombre, p.PrecioVenta, p.Stock);
+    }
+
+    // Ruta unica para agregar un item, venga del lector o del boton Agregar del
+    // catalogo: misma validacion de stock y misma union de lineas.
+    private async Task AgregarAlDetalleAsync(
+        int idProducto, string nombre, decimal precioVenta, int? stockConocido = null)
+    {
         var idxExistente = -1;
         for (var i = 0; i < State.Items.Count; i++)
         {
             var l = State.Items[i];
-            if (l.IdProducto == p.IdProducto && l.PrecioUnitario == p.PrecioVenta)
+            if (l.IdProducto == idProducto && l.PrecioUnitario == precioVenta)
             { idxExistente = i; break; }
         }
 
         var cantidadEnVenta = idxExistente >= 0 ? State.Items[idxExistente].Cantidad : 0;
+
+        // El stock se relee de la base en cada intento: el que trae la grilla
+        // puede estar viejo si otra caja vendio mientras tanto.
         int stockActual;
-        try { stockActual = await ProductosRepo.ObtenerStockAsync(p.IdProducto); }
-        catch { stockActual = p.Stock; }
+        try { stockActual = await ProductosRepo.ObtenerStockAsync(idProducto); }
+        catch { stockActual = stockConocido ?? 0; }
 
         if (stockActual < cantidadEnVenta + 1)
         {
-            await MostrarFeedback("error", $"Sin stock: {p.Nombre} (stock actual {stockActual}).");
+            await MostrarFeedback("error", $"Sin stock: {nombre} (stock actual {stockActual}).");
             await Ui.BeepAsync(220, 250);
             return;
         }
@@ -214,15 +381,29 @@
         {
             State.AgregarLinea(new LineaTicket
             {
-                IdProducto = p.IdProducto,
-                Nombre = p.Nombre,
+                IdProducto = idProducto,
+                Nombre = nombre,
                 Cantidad = 1,
-                PrecioUnitario = p.PrecioVenta
+                PrecioUnitario = precioVenta
             });
         }
 
         _seleccionada = idxExistente >= 0 ? idxExistente : State.Items.Count - 1;
-        await MostrarFeedback("exito", $"{p.Nombre} agregado.");
+        await MostrarFeedback("exito", $"{nombre} agregado.");
+    }
+
+    // El texto del campo se normaliza con la misma tolerancia que el dialogo de
+    // cobro: se ignoran separadores y simbolos y se queda con el numero.
+    private void ActualizarRecibido() => State.SetDineroRecibido(ParseDinero(_recibidoTexto));
+
+    private static decimal ParseDinero(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto)) return 0m;
+        var limpio = new string(texto.Where(c => char.IsDigit(c) || c == ',' || c == '.').ToArray());
+        return decimal.TryParse(limpio, System.Globalization.NumberStyles.Any,
+                                System.Globalization.CultureInfo.CurrentCulture, out var d)
+            ? d
+            : 0m;
     }
 
     private void Seleccionar(int idx) => _seleccionada = idx;
@@ -257,10 +438,19 @@
 
     private async Task CancelarVenta()
     {
+        await ReiniciarVentaAsync();
+        await MostrarFeedback("info", "Venta cancelada.");
+    }
+
+    // Deja la pantalla lista para la siguiente venta: limpia el detalle, el
+    // dinero recibido y refresca el catalogo, cuyo stock acaba de cambiar.
+    private async Task ReiniciarVentaAsync()
+    {
         State.Reiniciar();
         _seleccionada = -1;
+        _recibidoTexto = string.Empty;
         await State.LimpiarStorageAsync(JS);
-        await MostrarFeedback("info", "Venta cancelada.");
+        await CargarCatalogo();
     }
 
     private void AbrirCobro() { if (State.Items.Count > 0) _mostrarCobro = true; }
@@ -310,9 +500,7 @@
             await Ui.BeepAsync(220, 250);
         }
 
-        State.Reiniciar();
-        _seleccionada = -1;
-        await State.LimpiarStorageAsync(JS);
+        await ReiniciarVentaAsync();
         await MostrarFeedback("exito", $"Venta registrada. Cambio: {(recibido - total).ToString("C0")}");
     }
 
@@ -354,9 +542,7 @@
             await Ui.BeepAsync(220, 250);
         }
 
-        State.Reiniciar();
-        _seleccionada = -1;
-        await State.LimpiarStorageAsync(JS);
+        await ReiniciarVentaAsync();
         await MostrarFeedback("exito",
             $"Venta fiada a {fiado.NombreCliente} por {fiado.Valor.ToString("C0")}.");
     }

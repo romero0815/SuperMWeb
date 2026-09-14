@@ -50,10 +50,21 @@
 
 @code {
     [Parameter, EditorRequired] public decimal Total { get; set; }
+
+    // Lo que el cajero ya digito en la barra lateral de la venta, para no
+    // obligarlo a escribirlo de nuevo al abrir el cobro.
+    [Parameter] public decimal RecibidoInicial { get; set; }
+
     [Parameter] public EventCallback<decimal> OnConfirmar { get; set; }
     [Parameter] public EventCallback OnCancelar { get; set; }
 
     private string _recibidoTexto = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (RecibidoInicial > 0 && _recibidoTexto.Length == 0)
+            _recibidoTexto = decimal.Truncate(RecibidoInicial).ToString("0");
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
