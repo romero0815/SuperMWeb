@@ -128,8 +128,8 @@
 
 @if (_mostrarEtiqueta)
 {
-    <EtiquetaPrecioDialog NombreInicial="_etiquetaNombre"
-                          PrecioInicial="_etiquetaPrecio"
+    <EtiquetaPrecioDialog NombreInicial="@_etiquetaNombre"
+                          PrecioInicial="@_etiquetaPrecio"
                           OnImpreso="EtiquetaImpresa"
                           OnCancelar="CerrarEtiqueta" />
 }

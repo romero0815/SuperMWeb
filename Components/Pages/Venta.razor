@@ -207,8 +207,8 @@
 
 @if (_mostrarCantidad && _seleccionada >= 0 && _seleccionada < State.Items.Count)
 {
-    <CantidadDialog Actual="State.Items[_seleccionada].Cantidad"
-                    Nombre="State.Items[_seleccionada].Nombre"
+    <CantidadDialog Actual="@State.Items[_seleccionada].Cantidad"
+                    Nombre="@State.Items[_seleccionada].Nombre"
                     OnConfirmar="AplicarNuevaCantidad"
                     OnCancelar="() => _mostrarCantidad = false" />
 }
