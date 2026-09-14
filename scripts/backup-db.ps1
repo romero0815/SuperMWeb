@@ -13,7 +13,7 @@
 [CmdletBinding()]
 param(
     [string]$Server    = "localhost",
-    [string]$Database  = "SuperM",
+    [string]$Database  = "SuperM2",
     [string]$BackupDir = "C:\SuperM\backups",
     [int]   $RetencionDias = 30
 )
