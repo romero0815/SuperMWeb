@@ -702,3 +702,66 @@ h1:focus { outline: none; }
     font-size: 0.78rem;
     letter-spacing: 0.03em;
 }
+
+/* Formularios en modal */
+
+.modal-form { min-width: min(560px, 92vw); outline: none; }
+
+.form-rejilla {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+    margin-bottom: 1.25rem;
+}
+.form-rejilla .ancho-total { grid-column: 1 / -1; }
+
+.campo-form { display: grid; gap: 0.3rem; min-width: 0; }
+.campo-form label {
+    font-size: 0.8rem;
+    color: #52606d;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.campo-form input,
+.campo-form select,
+.campo-form textarea {
+    padding: 0.6rem 0.7rem;
+    font-size: 1rem;
+    border: 1px solid #cbd2d9;
+    border-radius: 6px;
+    background: #f9fafb;
+    font-family: inherit;
+    width: 100%;
+}
+.campo-form input:focus,
+.campo-form select:focus,
+.campo-form textarea:focus {
+    border-color: #1976d2;
+    background: #fff;
+    outline: none;
+}
+.campo-form .campo-error { font-size: 0.8rem; color: #b32121; }
+
+.confirm-texto { margin: 0 0 1.25rem; color: #3e4c59; line-height: 1.5; }
+
+.modal .btn-peligro-solido { background: #b32121; color: #fff; }
+.modal .btn-peligro-solido:hover { background: #8e1a1a; }
+
+.acciones-fila { display: flex; gap: 0.35rem; white-space: nowrap; }
+
+/* Enlaces con apariencia de boton (descargas) */
+a.btn { text-decoration: none; display: inline-block; line-height: normal; }
+
+.errores-importacion {
+    background: #fdecea;
+    border-left: 4px solid #b32121;
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
+    color: #b32121;
+    max-height: 240px;
+    overflow: auto;
+    font-size: 0.9rem;
+}
+.errores-importacion ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+.errores-importacion li { margin-bottom: 0.2rem; }

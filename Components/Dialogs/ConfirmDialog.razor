@@ -1,0 +1,35 @@
+@rendermode InteractiveServer
+
+@* Equivalente de ConfirmacionForm del desktop: dialogo modal de si/no. *@
+
+<div class="modal-backdrop" @onclick="Cancelar">
+    <div class="modal" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
+        <h2>@Titulo</h2>
+        <p class="confirm-texto">@Mensaje</p>
+
+        <div class="acciones">
+            <button class="btn-secondary" @onclick="Cancelar">No (Esc)</button>
+            <button class="@(Peligro ? "btn-peligro-solido" : "btn-primary")" @onclick="Aceptar">Si</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Titulo { get; set; } = "Confirmar";
+    [Parameter, EditorRequired] public string Mensaje { get; set; } = string.Empty;
+
+    // Pinta el boton afirmativo en rojo para acciones destructivas.
+    [Parameter] public bool Peligro { get; set; }
+
+    [Parameter] public EventCallback OnAceptar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private Task Aceptar() => OnAceptar.InvokeAsync();
+    private Task Cancelar() => OnCancelar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnCancelar.InvokeAsync();
+        else if (e.Key == "Enter") await OnAceptar.InvokeAsync();
+    }
+}

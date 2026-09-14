@@ -1,0 +1,92 @@
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@inject ITicketPrinter Printer
+
+@* Equivalente de ImprimirPreciosForm del desktop: imprime una etiqueta de
+   precio suelta, con nombre y precio escritos a mano. Cuando se abre desde
+   una fila de la grilla llega precargada con ese producto. *@
+
+<div class="modal-backdrop" @onclick="Cancelar">
+    <div class="modal modal-form" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
+        <h2>Imprimir etiqueta de precio</h2>
+
+        @if (_error is not null)
+        {
+            <div class="feedback error">@_error</div>
+        }
+
+        <div class="form-rejilla">
+            <div class="campo-form ancho-total">
+                <label for="ePNombre">Nombre *</label>
+                <input id="ePNombre" @bind="_nombre" @bind:event="oninput" autocomplete="off" />
+            </div>
+            <div class="campo-form ancho-total">
+                <label for="ePPrecio">Precio *</label>
+                <input id="ePPrecio" inputmode="decimal" @bind="_precio" @bind:event="oninput" autocomplete="off" />
+            </div>
+        </div>
+
+        <div class="acciones">
+            <button class="btn-secondary" @onclick="Cancelar">Cancelar (Esc)</button>
+            <button class="btn-primary" disabled="@_imprimiendo" @onclick="Imprimir">
+                @(_imprimiendo ? "Imprimiendo..." : "Imprimir")
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? NombreInicial { get; set; }
+    [Parameter] public decimal? PrecioInicial { get; set; }
+    [Parameter] public EventCallback<string> OnImpreso { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private string _nombre = string.Empty;
+    private string _precio = string.Empty;
+    private bool _imprimiendo;
+    private string? _error;
+
+    protected override void OnParametersSet()
+    {
+        _nombre = NombreInicial ?? string.Empty;
+        _precio = PrecioInicial?.ToString("0.##") ?? string.Empty;
+    }
+
+    private async Task Imprimir()
+    {
+        _error = null;
+
+        // Mismas validaciones que ImprimirPreciosForm.aplicarValidaciones.
+        var nombre = _nombre.Trim();
+        var precio = _precio.Trim();
+
+        if (nombre.Length == 0) { _error = "El nombre del producto es obligatorio."; return; }
+        if (precio.Length == 0) { _error = "El precio del producto es obligatorio."; return; }
+        if (!FormatosTexto.IsNumberDecimal(precio)) { _error = "El precio del producto debe ser numerico."; return; }
+
+        _imprimiendo = true;
+        try
+        {
+            var bytes = TicketBuilder.ConstruirEtiquetaPrecio(nombre, FormatosTexto.ParseDecimal(precio));
+            var res = await Printer.ImprimirAsync(bytes);
+
+            if (res.Exitoso) await OnImpreso.InvokeAsync($"Etiqueta de {nombre} enviada a la impresora.");
+            else _error = $"Fallo la impresion: {res.MensajeError}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error al imprimir: {ex.Message}";
+        }
+        finally
+        {
+            _imprimiendo = false;
+        }
+    }
+
+    private Task Cancelar() => OnCancelar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnCancelar.InvokeAsync();
+    }
+}

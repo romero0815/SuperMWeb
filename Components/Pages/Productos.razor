@@ -1,0 +1,407 @@
+@page "/productos"
+@attribute [Authorize(Roles = "Administrador,SuperAdmin")]
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@using SuperMWeb.Application
+@using SuperMWeb.Components.Dialogs
+@using SuperMWeb.Services
+@inject IProductosRepository ProductosRepo
+@inject IProductosExcel Excel
+@inject ScannerService Scanner
+@inject IJSRuntime JS
+
+@* Equivalente de ProductosForm del desktop: grilla de productos activos,
+   busqueda por nombre y por codigo de barras, alta/edicion/baja logica,
+   impresion de etiqueta de precio y carga masiva por Excel. *@
+
+<PageTitle>Productos - SuperM</PageTitle>
+
+<div class="pagina">
+
+    <div class="pagina-header">
+        <h1>Productos</h1>
+        <div class="acciones">
+            <button class="btn btn-exito" @onclick="AbrirNuevo">Agregar producto</button>
+            <button class="btn btn-secundario" @onclick="() => _mostrarEtiqueta = true">Etiqueta de precio</button>
+            <a class="btn btn-secundario" href="/api/productos/exportar">Exportar a Excel</a>
+            <a class="btn btn-secundario" href="/api/productos/plantilla">Descargar plantilla</a>
+            <button class="btn btn-primario" @onclick="() => _mostrarImportar = true">Importar Excel</button>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="feedback @_feedback.Tipo">@_feedback.Mensaje</div>
+    }
+
+    <section class="panel">
+        <div class="filtros">
+            <div class="campo">
+                <label for="buscar">Buscar por nombre</label>
+                <input id="buscar" class="busqueda" @bind="_filtroNombre" @bind:event="oninput"
+                       @bind:after="BuscarPorNombre" placeholder="Nombre del producto" autocomplete="off" />
+            </div>
+            <div class="campo">
+                <label for="codigo">Codigo de barras</label>
+                <input id="codigo" @bind="_filtroCodigo" @bind:event="oninput"
+                       @bind:after="BuscarPorCodigo" placeholder="Escanea o escribe" autocomplete="off" />
+            </div>
+            <button class="btn btn-secundario" @onclick="LimpiarFiltros">Limpiar</button>
+        </div>
+
+        <div class="tabla-scroll">
+            <table class="tabla">
+                <thead>
+                    <tr>
+                        <th class="numero">#</th>
+                        <th>Nombre</th>
+                        <th>Descripcion</th>
+                        <th class="numero">P. compra</th>
+                        <th class="numero">P. venta</th>
+                        <th class="numero">Stock</th>
+                        <th>Proveedor</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_cargando)
+                    {
+                        <tr><td colspan="8" class="vacio-fila">Cargando...</td></tr>
+                    }
+                    else if (_productos.Count == 0)
+                    {
+                        <tr><td colspan="8" class="vacio-fila">Sin productos que coincidan con la busqueda.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var p in _productos)
+                        {
+                            <tr>
+                                <td class="numero">@p.IdProducto</td>
+                                <td>@p.Nombre</td>
+                                <td>@p.Descripcion</td>
+                                <td class="numero">@p.PrecioCompra.ToString("C0")</td>
+                                <td class="numero">@p.PrecioVenta.ToString("C0")</td>
+                                <td class="numero">
+                                    <span class="stock-pill @ClaseStock(p.Stock)">@p.Stock</span>
+                                </td>
+                                <td>@p.Proveedor</td>
+                                <td class="acciones-fila">
+                                    <button class="btn btn-secundario btn-mini" @onclick="() => ImprimirEtiqueta(p)">Imprimir</button>
+                                    <button class="btn btn-primario btn-mini" @onclick="() => AbrirEdicion(p.IdProducto)">Editar</button>
+                                    <button class="btn btn-peligro btn-mini" @onclick="() => PedirBaja(p)">Eliminar</button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <p class="nota">
+            Sin filtros se muestran los primeros 250 productos activos. La exportacion a Excel incluye todos.
+        </p>
+    </section>
+</div>
+
+@if (_mostrarFormulario)
+{
+    <ProductoDialog IdProducto="_idEnEdicion"
+                    OnGuardado="ProductoGuardado"
+                    OnCancelar="() => _mostrarFormulario = false" />
+}
+
+@if (_bajaPendiente is not null)
+{
+    <ConfirmDialog Titulo="Eliminar producto"
+                   Mensaje="@($"Deseas eliminar \"{_bajaPendiente.Nombre}\"? Dejara de aparecer en ventas y en la grilla.")"
+                   Peligro="true"
+                   OnAceptar="ConfirmarBaja"
+                   OnCancelar="() => _bajaPendiente = null" />
+}
+
+@if (_mostrarEtiqueta)
+{
+    <EtiquetaPrecioDialog NombreInicial="_etiquetaNombre"
+                          PrecioInicial="_etiquetaPrecio"
+                          OnImpreso="EtiquetaImpresa"
+                          OnCancelar="CerrarEtiqueta" />
+}
+
+@if (_mostrarImportar)
+{
+    <div class="modal-backdrop" @onclick="CerrarImportar">
+        <div class="modal modal-form" @onclick:stopPropagation="true">
+            <h2>Importar productos desde Excel</h2>
+
+            <p class="confirm-texto">
+                El archivo debe traer las columnas <strong>Nombre</strong>, <strong>PrecioCompra</strong>,
+                <strong>PrecioVenta</strong> y <strong>Stock</strong>. Opcionalmente
+                <strong>Descripcion</strong>, <strong>Active</strong> y <strong>NombreProveedor</strong>.
+                Si alguna fila tiene errores no se carga ninguna.
+            </p>
+
+            @if (_erroresImportacion.Count > 0)
+            {
+                <div class="errores-importacion">
+                    <strong>No se cargo nada. Corrige y vuelve a intentar:</strong>
+                    <ul>
+                        @foreach (var e in _erroresImportacion.Take(25))
+                        {
+                            <li>@e</li>
+                        }
+                    </ul>
+                    @if (_erroresImportacion.Count > 25)
+                    {
+                        <p class="nota">y @(_erroresImportacion.Count - 25) error(es) mas.</p>
+                    }
+                </div>
+            }
+
+            <div class="campo-form ancho-total">
+                <label for="archivoExcel">Archivo .xlsx</label>
+                <InputFile id="archivoExcel" OnChange="ArchivoSeleccionado" accept=".xlsx" />
+            </div>
+
+            <div class="acciones">
+                <button class="btn-secondary" disabled="@_importando" @onclick="CerrarImportar">Cerrar</button>
+            </div>
+
+            @if (_importando)
+            {
+                <p class="cargando">Procesando archivo...</p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<ProductoListado> _productos = Array.Empty<ProductoListado>();
+    private string _filtroNombre = string.Empty;
+    private string _filtroCodigo = string.Empty;
+    private bool _cargando = true;
+
+    private bool _mostrarFormulario;
+    private int _idEnEdicion;
+
+    private ProductoListado? _bajaPendiente;
+
+    private bool _mostrarEtiqueta;
+    private string? _etiquetaNombre;
+    private decimal? _etiquetaPrecio;
+
+    private bool _mostrarImportar;
+    private bool _importando;
+    private List<string> _erroresImportacion = new();
+
+    private FeedbackMsg? _feedback;
+    private CancellationTokenSource? _feedbackCts;
+
+    protected override Task OnInitializedAsync() => Cargar();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // El lector fisico tambien sirve para filtrar aqui, igual que el
+        // txtCodigoBarras de ProductosForm.
+        Scanner.OnEscaneo += OnEscaneo;
+        await Scanner.IniciarAsync();
+    }
+
+    private async void OnEscaneo(string codigo)
+    {
+        if (_mostrarFormulario || _mostrarEtiqueta || _mostrarImportar || _bajaPendiente is not null) return;
+
+        await InvokeAsync(async () =>
+        {
+            _filtroCodigo = codigo.Trim();
+            _filtroNombre = string.Empty;
+            await Cargar();
+            StateHasChanged();
+        });
+    }
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        try
+        {
+            _productos = await ProductosRepo.ListarAsync(
+                filtroNombre: string.IsNullOrWhiteSpace(_filtroCodigo) ? _filtroNombre : null,
+                codigoBarras: _filtroCodigo);
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudieron cargar los productos: {ex.Message}");
+            _productos = Array.Empty<ProductoListado>();
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    // Los dos filtros son excluyentes, igual que en el desktop.
+    private async Task BuscarPorNombre()
+    {
+        if (_filtroNombre.Length > 0) _filtroCodigo = string.Empty;
+        await Cargar();
+    }
+
+    private async Task BuscarPorCodigo()
+    {
+        if (_filtroCodigo.Length > 0) _filtroNombre = string.Empty;
+        await Cargar();
+    }
+
+    private async Task LimpiarFiltros()
+    {
+        _filtroNombre = string.Empty;
+        _filtroCodigo = string.Empty;
+        await Cargar();
+    }
+
+    private static string ClaseStock(int stock) => stock <= 5 ? "bajo" : stock <= 10 ? "medio" : "alto";
+
+    private void AbrirNuevo()
+    {
+        _idEnEdicion = 0;
+        _mostrarFormulario = true;
+    }
+
+    private void AbrirEdicion(int id)
+    {
+        _idEnEdicion = id;
+        _mostrarFormulario = true;
+    }
+
+    private async Task ProductoGuardado()
+    {
+        _mostrarFormulario = false;
+        await Cargar();
+        await MostrarFeedback("exito", _idEnEdicion > 0
+            ? "Producto actualizado correctamente."
+            : "Producto creado correctamente.");
+    }
+
+    private void PedirBaja(ProductoListado p) => _bajaPendiente = p;
+
+    private async Task ConfirmarBaja()
+    {
+        var p = _bajaPendiente;
+        _bajaPendiente = null;
+        if (p is null) return;
+
+        try
+        {
+            await ProductosRepo.DesactivarAsync(p.IdProducto);
+            await Cargar();
+            await MostrarFeedback("exito", "Producto eliminado correctamente.");
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo eliminar: {ex.Message}");
+        }
+    }
+
+    private void ImprimirEtiqueta(ProductoListado p)
+    {
+        // El desktop concatena nombre y descripcion en la etiqueta.
+        var nombre = string.IsNullOrWhiteSpace(p.Descripcion)
+            ? p.Nombre
+            : $"{p.Nombre} {p.Descripcion}";
+
+        _etiquetaNombre = nombre.Trim();
+        _etiquetaPrecio = p.PrecioVenta;
+        _mostrarEtiqueta = true;
+    }
+
+    private async Task EtiquetaImpresa(string mensaje)
+    {
+        CerrarEtiqueta();
+        await MostrarFeedback("exito", mensaje);
+    }
+
+    private void CerrarEtiqueta()
+    {
+        _mostrarEtiqueta = false;
+        _etiquetaNombre = null;
+        _etiquetaPrecio = null;
+    }
+
+    private void CerrarImportar()
+    {
+        if (_importando) return;
+        _mostrarImportar = false;
+        _erroresImportacion = new List<string>();
+    }
+
+    private async Task ArchivoSeleccionado(InputFileChangeEventArgs e)
+    {
+        _importando = true;
+        _erroresImportacion = new List<string>();
+
+        try
+        {
+            // 10 MB de tope: una carga masiva de productos no se acerca a eso.
+            await using var stream = e.File.OpenReadStream(10 * 1024 * 1024);
+
+            // ClosedXML necesita un stream con seek; el de InputFile no lo tiene.
+            using var memoria = new MemoryStream();
+            await stream.CopyToAsync(memoria);
+            memoria.Position = 0;
+
+            var resultado = await Excel.ImportarAsync(memoria);
+
+            if (resultado.Exitoso)
+            {
+                _mostrarImportar = false;
+                await Cargar();
+                await MostrarFeedback("exito", $"{resultado.Insertados} producto(s) importados correctamente.");
+            }
+            else
+            {
+                _erroresImportacion = resultado.Errores.ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            _erroresImportacion = [$"No se pudo procesar el archivo: {ex.Message}"];
+        }
+        finally
+        {
+            _importando = false;
+        }
+    }
+
+    private async Task MostrarFeedback(string tipo, string mensaje)
+    {
+        _feedbackCts?.Cancel();
+        _feedbackCts = new CancellationTokenSource();
+        var token = _feedbackCts.Token;
+
+        _feedback = new FeedbackMsg(tipo, mensaje);
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+            if (!token.IsCancellationRequested)
+            {
+                _feedback = null;
+                StateHasChanged();
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Scanner.OnEscaneo -= OnEscaneo;
+        await Scanner.DetenerAsync();
+        _feedbackCts?.Cancel();
+    }
+
+    private record FeedbackMsg(string Tipo, string Mensaje);
+}
