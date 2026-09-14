@@ -78,7 +78,7 @@
                     }
                     else
                     {
-                        @foreach (var d in _deudores)
+                        @foreach (var d in _paginaDeudores)
                         {
                             <tr>
                                 <td class="numero">@d.IdDeudor</td>
@@ -112,8 +112,15 @@
             </table>
         </div>
 
+        <Paginador TotalFilas="_deudores.Count"
+                   Pagina="_paginaActual"
+                   TamanoPagina="_tamanoPagina"
+                   OnCambiarPagina="(int p) => _paginaActual = p"
+                   OnCambiarTamano="CambiarTamano" />
+
         <p class="nota">
             El saldo se calcula sumando los cargos y restando los abonos no anulados. En rojo, los que superan su cupo.
+            Los totales de arriba cubren todo el resultado de la busqueda, no solo la pagina visible.
         </p>
     </section>
 </div>
@@ -147,6 +154,12 @@
     private bool _soloConSaldo;
     private bool _cargando = true;
 
+    private int _paginaActual = 1;
+    private int _tamanoPagina = 25;
+
+    private IEnumerable<DeudorListado> _paginaDeudores =>
+        _deudores.Skip((_paginaActual - 1) * _tamanoPagina).Take(_tamanoPagina);
+
     private bool _mostrarFormulario;
     private int _idEnEdicion;
     private DeudorListado? _abonoPara;
@@ -163,6 +176,9 @@
         try
         {
             _deudores = await DeudoresRepo.ListarAsync(_filtro, _soloConSaldo);
+
+            // Un filtro nuevo puede dejar menos paginas que la actual.
+            AjustarPagina();
         }
         catch (Exception ex)
         {
@@ -173,6 +189,18 @@
         {
             _cargando = false;
         }
+    }
+
+    private void CambiarTamano(int tamano)
+    {
+        _tamanoPagina = tamano;
+        AjustarPagina();
+    }
+
+    private void AjustarPagina()
+    {
+        var totalPaginas = Math.Max(1, (int)Math.Ceiling(_deudores.Count / (double)_tamanoPagina));
+        if (_paginaActual > totalPaginas) _paginaActual = totalPaginas;
     }
 
     private void VerDetalle(int idDeudor) => Nav.NavigateTo($"/deudores/{idDeudor}");

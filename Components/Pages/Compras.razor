@@ -78,7 +78,7 @@
                         }
                         else
                         {
-                            @foreach (var p in _productos)
+                            @foreach (var p in _paginaProductos)
                             {
                                 <tr>
                                     <td class="numero">@p.IdProducto</td>
@@ -95,6 +95,12 @@
                     </tbody>
                 </table>
             </div>
+
+            <Paginador TotalFilas="_productos.Count"
+                       Pagina="_paginaActual"
+                       TamanoPagina="_tamanoPagina"
+                       OnCambiarPagina="(int p) => _paginaActual = p"
+                       OnCambiarTamano="CambiarTamano" />
         </section>
 
         <section class="panel">
@@ -200,6 +206,12 @@
     private string _filtroNombre = string.Empty;
     private string _filtroCodigo = string.Empty;
 
+    private int _paginaActual = 1;
+    private int _tamanoPagina = 25;
+
+    private IEnumerable<ProductoListado> _paginaProductos =>
+        _productos.Skip((_paginaActual - 1) * _tamanoPagina).Take(_tamanoPagina);
+
     private ProductoListado? _lineaEnEdicion;
     private ProductoListado? _bajaPendiente;
     private bool _confirmarCompra;
@@ -264,10 +276,15 @@
     {
         try
         {
+            // limite null: la grilla pagina en el cliente y ya no corta en 250.
             _productos = await ProductosRepo.ListarAsync(
                 filtroNombre: string.IsNullOrWhiteSpace(_filtroCodigo) ? _filtroNombre : null,
                 codigoBarras: _filtroCodigo,
+                limite: null,
                 idProveedor: _idProveedor);
+
+            // Cambiar de proveedor o de filtro siempre vuelve a la primera pagina.
+            _paginaActual = 1;
         }
         catch (Exception ex)
         {
@@ -425,6 +442,13 @@
         {
             await MostrarFeedback("error", $"Producto creado, pero no se pudo agregar al detalle: {ex.Message}");
         }
+    }
+
+    private void CambiarTamano(int tamano)
+    {
+        _tamanoPagina = tamano;
+        var totalPaginas = Math.Max(1, (int)Math.Ceiling(_productos.Count / (double)_tamanoPagina));
+        if (_paginaActual > totalPaginas) _paginaActual = totalPaginas;
     }
 
     private async Task MostrarFeedback(string tipo, string mensaje)

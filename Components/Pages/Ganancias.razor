@@ -65,7 +65,7 @@
                     }
                     else
                     {
-                        @foreach (var f in _filas)
+                        @foreach (var f in _paginaFilas)
                         {
                             <tr>
                                 <td>@f.Producto</td>
@@ -94,7 +94,14 @@
             </table>
         </div>
 
+        <Paginador TotalFilas="_filas.Count"
+                   Pagina="_paginaActual"
+                   TamanoPagina="_tamanoPagina"
+                   OnCambiarPagina="(int p) => _paginaActual = p"
+                   OnCambiarTamano="CambiarTamano" />
+
         <p class="nota">
+            Los totales del pie y la tarjeta de ganancia cubren todo el periodo, no solo la pagina visible.
             La ganancia usa el precio de compra actual de cada producto (el ultimo pagado al proveedor),
             no el precio vigente al momento de cada venta.
         </p>
@@ -107,6 +114,12 @@
     private DateTime _hasta = DateTime.Today;
     private string? _error;
 
+    private int _paginaActual = 1;
+    private int _tamanoPagina = 25;
+
+    private IEnumerable<FilaGanancia> _paginaFilas =>
+        _filas.Skip((_paginaActual - 1) * _tamanoPagina).Take(_tamanoPagina);
+
     protected override Task OnInitializedAsync() => Cargar();
 
     private async Task Cargar()
@@ -116,11 +129,19 @@
         {
             var filas = await ReportesRepo.ListarGananciasEntreAsync(_desde.Date, _hasta.Date.AddDays(1));
             _filas = filas.ToList();
+            _paginaActual = 1;
         }
         catch (Exception ex)
         {
             _error = $"No se pudo cargar el reporte: {ex.Message}";
             _filas = new List<FilaGanancia>();
         }
+    }
+
+    private void CambiarTamano(int tamano)
+    {
+        _tamanoPagina = tamano;
+        var total = Math.Max(1, (int)Math.Ceiling(_filas.Count / (double)_tamanoPagina));
+        if (_paginaActual > total) _paginaActual = total;
     }
 }

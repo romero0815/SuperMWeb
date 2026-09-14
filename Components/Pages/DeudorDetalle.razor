@@ -101,7 +101,7 @@
                         }
                         else
                         {
-                            @foreach (var m in _movimientos)
+                            @foreach (var m in _paginaMovimientos)
                             {
                                 <tr class="@(m.Anulado ? "fila-anulada" : null)">
                                     <td class="numero">@m.IdMovimiento</td>
@@ -130,8 +130,15 @@
                 </table>
             </div>
 
+            <Paginador TotalFilas="_movimientos.Count"
+                       Pagina="_paginaActual"
+                       TamanoPagina="_tamanoPagina"
+                       OnCambiarPagina="(int p) => _paginaActual = p"
+                       OnCambiarTamano="CambiarTamano" />
+
             <p class="nota">
                 Anular un movimiento no lo borra: lo marca y lo saca del calculo del saldo.
+                Los totales de arriba cubren todo el periodo filtrado, no solo la pagina visible.
             </p>
         </section>
     }
@@ -171,6 +178,12 @@
     private DateTime _hasta = DateTime.Today;
     private bool _verAnulados;
     private bool _cargando = true;
+
+    private int _paginaActual = 1;
+    private int _tamanoPagina = 25;
+
+    private IEnumerable<MovimientoDeudor> _paginaMovimientos =>
+        _movimientos.Skip((_paginaActual - 1) * _tamanoPagina).Take(_tamanoPagina);
 
     private bool _mostrarDeuda;
     private bool _mostrarAbono;
@@ -214,6 +227,9 @@
         {
             _movimientos = await DeudoresRepo.ListarMovimientosAsync(IdDeudor, _desde, _hasta, _verAnulados);
             _saldo = await DeudoresRepo.ObtenerSaldoAsync(IdDeudor);
+
+            // Cambiar el rango o el filtro siempre vuelve a la primera pagina.
+            _paginaActual = 1;
         }
         catch (Exception ex)
         {
@@ -253,6 +269,13 @@
         {
             await MostrarFeedback("error", $"No se pudo anular: {ex.Message}");
         }
+    }
+
+    private void CambiarTamano(int tamano)
+    {
+        _tamanoPagina = tamano;
+        var totalPaginas = Math.Max(1, (int)Math.Ceiling(_movimientos.Count / (double)_tamanoPagina));
+        if (_paginaActual > totalPaginas) _paginaActual = totalPaginas;
     }
 
     private async Task MostrarFeedback(string tipo, string mensaje)

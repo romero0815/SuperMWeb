@@ -6,7 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <ResourcePreloader />
-    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    @* Bootstrap se retiro a proposito: no se usaba ninguna de sus clases y su
+       regla `.modal { display: none }` ganaba sobre la nuestra, dejando todos
+       los dialogos invisibles (solo se veia el fondo oscurecido). *@
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["SuperMWeb.styles.css"]" />
     <ImportMap />

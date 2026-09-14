@@ -898,3 +898,72 @@ a.btn { text-decoration: none; display: inline-block; line-height: normal; }
 .campo-clave { display: flex; gap: 0.4rem; align-items: stretch; }
 .campo-clave input { flex: 1; min-width: 0; }
 .campo-clave button { white-space: nowrap; }
+
+/* ---------------- Correcciones ---------------- */
+
+/* El modal se declara con display explicito a proposito. Antes la hoja de
+   Bootstrap definia `.modal { display: none }` y, como nuestra regla no fijaba
+   display, ganaba la suya: el backdrop se pintaba pero el dialogo quedaba
+   invisible en 0x0. Bootstrap ya se retiro, y este display explicito evita que
+   vuelva a pasar si algun dia entra otra hoja de estilos de terceros. */
+.modal { display: block; }
+
+/* Banner de error de Blazor: viene en el layout pero nunca tuvo regla CSS, asi
+   que se mostraba siempre. Blazor lo hace visible por JS cuando hay un error. */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 2000;
+    background: #fdecea;
+    color: #b32121;
+    border-top: 3px solid #b32121;
+    padding: 0.8rem 1.25rem;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+    font-size: 0.95rem;
+}
+#blazor-error-ui .reload { color: #b32121; margin-left: 0.75rem; font-weight: 600; }
+
+/* ---------------- Paginador ---------------- */
+
+.paginador {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding-top: 0.85rem;
+    border-top: 1px solid #f0f4f8;
+    font-size: 0.9rem;
+    color: #52606d;
+}
+
+.paginador-info { white-space: nowrap; }
+.paginador-info strong { color: #1f2933; font-variant-numeric: tabular-nums; }
+
+.paginador-controles {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+.paginador-controles .btn { min-width: 2.1rem; font-variant-numeric: tabular-nums; }
+
+.paginador-salto { padding: 0 0.3rem; color: #9aa5b1; }
+
+.paginador-tamano {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    white-space: nowrap;
+}
+.paginador-tamano select {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.9rem;
+    border: 1px solid #cbd2d9;
+    border-radius: 6px;
+    background: #fff;
+}
+.paginador-tamano select:focus { border-color: #1976d2; outline: none; }

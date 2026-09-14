@@ -1,0 +1,101 @@
+@* Paginador reutilizable para las grillas. Trabaja sobre una lista ya cargada
+   en memoria: las pantallas filtran contra la base y luego cortan la pagina
+   con Skip/Take. Se hace asi a proposito para que los totales de los reportes
+   (sumas de dinero) sigan calculandose sobre TODO el periodo filtrado y no
+   solo sobre la pagina visible, que es como funcionaba el desktop. *@
+
+@if (TotalFilas > 0)
+{
+    <div class="paginador">
+        <span class="paginador-info">
+            Mostrando <strong>@Desde</strong>–<strong>@Hasta</strong> de <strong>@TotalFilas</strong>
+        </span>
+
+        <div class="paginador-controles">
+            <button class="btn btn-secundario btn-mini" disabled="@(Pagina <= 1)"
+                    @onclick="() => Ir(1)" title="Primera">&laquo;</button>
+            <button class="btn btn-secundario btn-mini" disabled="@(Pagina <= 1)"
+                    @onclick="() => Ir(Pagina - 1)" title="Anterior">&lsaquo;</button>
+
+            @foreach (var p in PaginasVisibles())
+            {
+                if (p < 0)
+                {
+                    <span class="paginador-salto">…</span>
+                }
+                else
+                {
+                    var destino = p;
+                    <button class="btn btn-mini @(destino == Pagina ? "btn-primario" : "btn-secundario")"
+                            @onclick="() => Ir(destino)">@destino</button>
+                }
+            }
+
+            <button class="btn btn-secundario btn-mini" disabled="@(Pagina >= TotalPaginas)"
+                    @onclick="() => Ir(Pagina + 1)" title="Siguiente">&rsaquo;</button>
+            <button class="btn btn-secundario btn-mini" disabled="@(Pagina >= TotalPaginas)"
+                    @onclick="() => Ir(TotalPaginas)" title="Ultima">&raquo;</button>
+        </div>
+
+        <label class="paginador-tamano">
+            Por pagina
+            <select value="@TamanoPagina" @onchange="CambiarTamano">
+                @foreach (var t in Tamanos)
+                {
+                    <option value="@t">@t</option>
+                }
+            </select>
+        </label>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public int TotalFilas { get; set; }
+    [Parameter, EditorRequired] public int Pagina { get; set; } = 1;
+    [Parameter, EditorRequired] public int TamanoPagina { get; set; } = 25;
+
+    [Parameter] public EventCallback<int> OnCambiarPagina { get; set; }
+    [Parameter] public EventCallback<int> OnCambiarTamano { get; set; }
+
+    [Parameter] public int[] Tamanos { get; set; } = [25, 50, 100, 250];
+
+    private int TotalPaginas => TamanoPagina <= 0
+        ? 1
+        : Math.Max(1, (int)Math.Ceiling(TotalFilas / (double)TamanoPagina));
+
+    private int Desde => TotalFilas == 0 ? 0 : (Pagina - 1) * TamanoPagina + 1;
+    private int Hasta => Math.Min(Pagina * TamanoPagina, TotalFilas);
+
+    private Task Ir(int pagina)
+    {
+        var destino = Math.Clamp(pagina, 1, TotalPaginas);
+        return destino == Pagina ? Task.CompletedTask : OnCambiarPagina.InvokeAsync(destino);
+    }
+
+    private Task CambiarTamano(ChangeEventArgs e) =>
+        int.TryParse(e.Value?.ToString(), out var t) && t > 0
+            ? OnCambiarTamano.InvokeAsync(t)
+            : Task.CompletedTask;
+
+    // Ventana de paginas alrededor de la actual. -1 marca un salto ("…").
+    private IEnumerable<int> PaginasVisibles()
+    {
+        const int ventana = 2;
+        var ultima = TotalPaginas;
+
+        if (ultima <= 7)
+        {
+            for (var i = 1; i <= ultima; i++) yield return i;
+            yield break;
+        }
+
+        yield return 1;
+        if (Pagina - ventana > 2) yield return -1;
+
+        for (var i = Math.Max(2, Pagina - ventana); i <= Math.Min(ultima - 1, Pagina + ventana); i++)
+            yield return i;
+
+        if (Pagina + ventana < ultima - 1) yield return -1;
+        yield return ultima;
+    }
+}
