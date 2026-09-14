@@ -78,6 +78,7 @@ public sealed class ProductosRepository : IProductosRepository
         string? codigoBarras = null,
         int? limite = 250,
         int? idProveedor = null,
+        bool soloConStock = false,
         CancellationToken ct = default)
     {
         // El TOP solo aplica al listado sin filtro, igual que el desktop:
@@ -88,6 +89,7 @@ public sealed class ProductosRepository : IProductosRepository
         var baseSql = SqlListadoBase.Replace("SELECT p.IdProducto", seleccion);
 
         if (idProveedor is not null) baseSql += " AND p.IdProveedor = @idProveedor";
+        if (soloConStock) baseSql += " AND p.Stock <> 0";
 
         string sql;
         SqlParameter? parametro = null;

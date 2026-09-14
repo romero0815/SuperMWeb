@@ -970,3 +970,84 @@ a.btn { text-decoration: none; display: inline-block; line-height: normal; }
 
 /* Texto de ayuda bajo un campo de formulario */
 .campo-form .campo-ayuda { font-size: 0.78rem; color: #7b8a99; line-height: 1.35; }
+
+/* ---------------- Venta: catalogo y cobro rapido ---------------- */
+
+/* La columna izquierda pasa a tener dos secciones apiladas: el catalogo de
+   respaldo arriba y el detalle de la venta abajo. */
+.venta-principal {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 1rem;
+    min-height: 0;
+    min-width: 0;
+}
+
+.venta-catalogo {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    padding: 0.9rem 1rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.catalogo-barra {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.6rem;
+}
+
+.campo-busqueda { display: grid; gap: 0.25rem; flex: 1; min-width: 0; }
+.campo-busqueda label {
+    font-size: 0.78rem;
+    color: #52606d;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.campo-busqueda input {
+    padding: 0.6rem 0.7rem;
+    font-size: 1.05rem;
+    border: 1px solid #cbd2d9;
+    border-radius: 6px;
+    background: #f9fafb;
+    width: 100%;
+}
+.campo-busqueda input:focus { border-color: #1976d2; background: #fff; outline: none; }
+
+.catalogo-tabla { max-height: 34vh; overflow: auto; }
+.venta-catalogo .paginador { padding-top: 0.5rem; font-size: 0.85rem; }
+
+/* Dinero recibido y cambio en la barra lateral */
+
+.cobro-rapido {
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.9rem 0;
+    border-top: 1px solid #f0f4f8;
+    border-bottom: 1px solid #f0f4f8;
+}
+.cobro-rapido input {
+    padding: 0.6rem 0.7rem;
+    font-size: 1.6rem;
+    font-weight: 600;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    border: 1px solid #cbd2d9;
+    border-radius: 6px;
+    background: #f9fafb;
+    margin-bottom: 0.5rem;
+    width: 100%;
+}
+.cobro-rapido input:focus { border-color: #1976d2; background: #fff; outline: none; }
+
+.cambio-grande {
+    font-size: 2.1rem;
+    font-weight: 700;
+    color: #1b5e20;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+.cambio-grande.faltante { color: #b32121; font-size: 1.6rem; }

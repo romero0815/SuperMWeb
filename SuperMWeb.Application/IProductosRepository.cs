@@ -25,11 +25,14 @@ public interface IProductosRepository
     // en el desktop tampoco aplicaba el TOP de la grilla.
     // idProveedor restringe el listado a un proveedor concreto: lo usa la
     // pantalla de compras, que solo ofrece los productos del proveedor elegido.
+    // soloConStock deja fuera los productos en cero: lo usa el catalogo de la
+    // pantalla de venta cuando no hay busqueda, igual que VentasForm.
     Task<IReadOnlyList<ProductoListado>> ListarAsync(
         string? filtroNombre = null,
         string? codigoBarras = null,
         int? limite = 250,
         int? idProveedor = null,
+        bool soloConStock = false,
         CancellationToken ct = default);
 
     Task<Producto?> ObtenerPorIdAsync(int idProducto, CancellationToken ct = default);
