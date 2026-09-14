@@ -189,10 +189,13 @@
 
 @if (_mostrarCobro)
 {
-    <CobroDialog Total="State.Total"
-                 RecibidoInicial="State.DineroRecibido"
-                 OnConfirmar="ConfirmarCobro"
-                 OnCancelar="() => _mostrarCobro = false" />
+    @* Solo confirma, como el ConfirmacionForm del escritorio. El dinero
+       recibido y el cambio se digitan en la barra lateral; exigirlos aqui
+       obligaria a escribirlos dos veces y bloquearia el cobro. *@
+    <ConfirmDialog Titulo="Cobrar venta"
+                   Mensaje="@MensajeCobro"
+                   OnAceptar="ConfirmarCobro"
+                   OnCancelar="() => _mostrarCobro = false" />
 }
 
 @if (_mostrarFiar)
@@ -464,11 +467,19 @@
         return Task.CompletedTask;
     }
 
-    private async Task ConfirmarCobro(decimal recibido)
+    // Mensaje de la confirmacion: recuerda el total y, si el cajero ya digito
+    // el dinero recibido, tambien el cambio que debe entregar.
+    private string MensajeCobro =>
+        State.DineroRecibido > 0
+            ? $"Finalizar la venta por {State.Total.ToString("C0")}? " +
+              $"Recibido {State.DineroRecibido.ToString("C0")}, cambio {State.Cambio.ToString("C0")}."
+            : $"Deseas finalizar la venta por {State.Total.ToString("C0")}?";
+
+    private async Task ConfirmarCobro()
     {
-        State.SetDineroRecibido(recibido);
         _mostrarCobro = false;
 
+        var recibido = State.DineroRecibido;
         var total = State.Total;
         var items = State.Items.ToList();
 
@@ -500,8 +511,11 @@
             await Ui.BeepAsync(220, 250);
         }
 
+        var cambio = VentaCalculadora.CalcularCambio(recibido, total);
         await ReiniciarVentaAsync();
-        await MostrarFeedback("exito", $"Venta registrada. Cambio: {(recibido - total).ToString("C0")}");
+        await MostrarFeedback("exito", recibido > 0
+            ? $"Venta registrada. Cambio: {cambio.ToString("C0")}"
+            : "Venta registrada.");
     }
 
     // Venta fiada. A diferencia del cobro normal, la venta y el cargo al deudor
