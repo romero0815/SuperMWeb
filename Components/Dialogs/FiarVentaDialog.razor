@@ -1,0 +1,349 @@
+@rendermode InteractiveServer
+@using System.Globalization
+@using SuperMWeb.Application
+@inject IDeudoresRepository DeudoresRepo
+
+@* Equivalente de FrmFiarVenta del desktop: se busca un cliente existente o se
+   captura uno nuevo y se define el valor a fiar, precargado con el total de la
+   venta pero editable.
+
+   Igual que en el desktop, este dialogo NO escribe en la base: devuelve los
+   datos para que la pantalla de venta registre la venta y la deuda dentro de
+   una misma transaccion. *@
+
+<div class="modal-backdrop" @onclick="Cancelar">
+    <div class="modal modal-ancho" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
+        <h2>Fiar venta</h2>
+
+        <div class="resumen">
+            <div class="fila"><span>Total de la venta</span><strong>@TotalVenta.ToString("C0")</strong></div>
+            <div class="fila"><span>Cliente</span><strong>@(_nombreSeleccionado ?? "—")</strong></div>
+            <div class="fila"><span>Saldo actual</span><span>@_saldoSeleccionado.ToString("C0")</span></div>
+            <div class="fila total-fila @(SuperaCupo ? "excede" : null)">
+                <span>Saldo resultante</span><span>@SaldoResultante.ToString("C0")</span>
+            </div>
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="feedback error">@_error</div>
+        }
+
+        @if (_confirmacion is not null)
+        {
+            <div class="feedback info">
+                @_confirmacion
+                <div class="acciones-inline">
+                    <button class="btn btn-secundario btn-mini" @onclick="CancelarConfirmacion">Revisar</button>
+                    <button class="btn btn-primario btn-mini" @onclick="Continuar">Continuar</button>
+                </div>
+            </div>
+        }
+
+        @if (!_clienteNuevo)
+        {
+            <div class="filtros">
+                <div class="campo">
+                    <label for="fvBuscar">Buscar cliente</label>
+                    <input id="fvBuscar" class="busqueda" @bind="_filtro" @bind:event="oninput"
+                           @bind:after="CargarClientes" placeholder="Nombre, identificacion o telefono" autocomplete="off" />
+                </div>
+                <button class="btn btn-secundario" @onclick="ActivarClienteNuevo">Cliente nuevo</button>
+            </div>
+
+            <div class="tabla-scroll lista-clientes">
+                <table class="tabla">
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>Identificacion</th>
+                            <th class="numero">Cupo</th>
+                            <th class="numero">Saldo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_clientes.Count == 0)
+                        {
+                            <tr><td colspan="4" class="vacio-fila">Sin clientes que coincidan.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var c in _clientes)
+                            {
+                                <tr class="@(c.IdDeudor == _idSeleccionado ? "seleccionada" : null)"
+                                    @onclick="() => Seleccionar(c)">
+                                    <td>@c.NombreCliente</td>
+                                    <td>@c.Identificacion</td>
+                                    <td class="numero">@(c.CupoMaximo is null ? "—" : c.CupoMaximo.Value.ToString("C0"))</td>
+                                    <td class="numero">@c.Saldo.ToString("C0")</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="panel-nuevo">
+                <div class="panel-barra">
+                    <strong>Cliente nuevo</strong>
+                    <button class="btn btn-secundario btn-mini" @onclick="VolverALista">Volver a la lista</button>
+                </div>
+                <div class="form-rejilla">
+                    <div class="campo-form ancho-total">
+                        <label for="fvNombre">Nombre *</label>
+                        <input id="fvNombre" @bind="_nombreNuevo" @bind:event="oninput" autocomplete="off" />
+                    </div>
+                    <div class="campo-form">
+                        <label for="fvIdent">Identificacion</label>
+                        <input id="fvIdent" inputmode="numeric" @bind="_identNuevo" @bind:event="oninput" autocomplete="off" />
+                    </div>
+                    <div class="campo-form">
+                        <label for="fvTel">Telefono</label>
+                        <input id="fvTel" inputmode="numeric" maxlength="10" @bind="_telNuevo" @bind:event="oninput" autocomplete="off" />
+                    </div>
+                    <div class="campo-form ancho-total">
+                        <label for="fvCupo">Cupo maximo</label>
+                        <input id="fvCupo" inputmode="decimal" @bind="_cupoNuevo" @bind:event="oninput"
+                               placeholder="Sin limite" autocomplete="off" />
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="form-rejilla">
+            <div class="campo-form">
+                <label for="fvValor">Valor a fiar *</label>
+                <input id="fvValor" inputmode="decimal" @bind="_valor" @bind:event="oninput" autocomplete="off" />
+            </div>
+            <div class="campo-form">
+                <label for="fvDesc">Descripcion</label>
+                <input id="fvDesc" @bind="_descripcion" @bind:event="oninput" autocomplete="off" />
+            </div>
+        </div>
+
+        <div class="acciones">
+            <button class="btn-secondary" @onclick="Cancelar">Cancelar (Esc)</button>
+            <button class="btn-primary" @onclick="Fiar">Fiar venta</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public decimal TotalVenta { get; set; }
+    [Parameter] public EventCallback<VentaFiada> OnFiar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private IReadOnlyList<DeudorListado> _clientes = Array.Empty<DeudorListado>();
+    private string _filtro = string.Empty;
+
+    private int _idSeleccionado;
+    private string? _nombreSeleccionado;
+    private decimal _saldoSeleccionado;
+    private decimal? _cupoSeleccionado;
+
+    private bool _clienteNuevo;
+    private string _nombreNuevo = string.Empty;
+    private string _identNuevo = string.Empty;
+    private string _telNuevo = string.Empty;
+    private string _cupoNuevo = string.Empty;
+
+    private string _valor = string.Empty;
+    private string _descripcion = "Venta fiada";
+    private string? _error;
+    private string? _confirmacion;
+
+    private enum PasoConfirmacion { Ninguno, Cupo, Monto }
+    private PasoConfirmacion _pasoPendiente = PasoConfirmacion.Ninguno;
+    private bool _cupoConfirmado;
+    private bool _montoConfirmado;
+
+    private decimal Monto => FormatosTexto.IsNumberDecimal(_valor.Trim())
+        ? FormatosTexto.ParseValorMoneda(_valor.Trim())
+        : 0m;
+
+    private decimal SaldoResultante => _saldoSeleccionado + Monto;
+
+    private decimal? CupoVigente => _clienteNuevo ? LeerCupoNuevo() : _cupoSeleccionado;
+
+    private bool SuperaCupo => CupoVigente is > 0 && SaldoResultante > CupoVigente.Value;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Se escribe con coma decimal para que pase la validacion de IsNumberDecimal.
+        _valor = TotalVenta.ToString("0.##", CultureInfo.InvariantCulture).Replace(".", ",");
+        await CargarClientes();
+    }
+
+    private async Task CargarClientes()
+    {
+        try
+        {
+            _clientes = await DeudoresRepo.ListarAsync(_filtro, soloConSaldo: false, limite: 100);
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudieron cargar los clientes: {ex.Message}";
+            _clientes = Array.Empty<DeudorListado>();
+        }
+    }
+
+    private void Seleccionar(DeudorListado c)
+    {
+        _idSeleccionado = c.IdDeudor;
+        _nombreSeleccionado = c.NombreCliente;
+        _saldoSeleccionado = c.Saldo;
+        _cupoSeleccionado = c.CupoMaximo;
+    }
+
+    private void ActivarClienteNuevo()
+    {
+        _clienteNuevo = true;
+        LimpiarSeleccion();
+        _nombreSeleccionado = "(nuevo)";
+    }
+
+    private async Task VolverALista()
+    {
+        _clienteNuevo = false;
+        LimpiarSeleccion();
+        await CargarClientes();
+    }
+
+    private void LimpiarSeleccion()
+    {
+        _idSeleccionado = 0;
+        _nombreSeleccionado = null;
+        _saldoSeleccionado = 0m;
+        _cupoSeleccionado = null;
+    }
+
+    private decimal? LeerCupoNuevo()
+    {
+        var cupo = _cupoNuevo.Trim();
+        return cupo.Length == 0 ? null : FormatosTexto.ParseValorMoneda(cupo);
+    }
+
+    // El desktop encadena dos avisos antes de fiar: primero si el saldo supera
+    // el cupo, despues si el valor a fiar no coincide con el total de la venta.
+    // Cada uno se acepta por separado; "Revisar" descarta ambos.
+    private async Task Fiar()
+    {
+        _error = null;
+        _confirmacion = null;
+
+        var problema = await ValidarAsync();
+        if (problema is not null)
+        {
+            _error = problema;
+            return;
+        }
+
+        if (SuperaCupo && !_cupoConfirmado)
+        {
+            _confirmacion = $"El saldo del cliente quedaria en {SaldoResultante.ToString("C0")} " +
+                            $"y supera el cupo de {CupoVigente!.Value.ToString("C0")}. Deseas continuar?";
+            _pasoPendiente = PasoConfirmacion.Cupo;
+            return;
+        }
+
+        if (Monto != TotalVenta && !_montoConfirmado)
+        {
+            _confirmacion = $"El valor a fiar ({Monto.ToString("C0")}) es distinto al total de la venta " +
+                            $"({TotalVenta.ToString("C0")}). Deseas continuar?";
+            _pasoPendiente = PasoConfirmacion.Monto;
+            return;
+        }
+
+        await Emitir();
+    }
+
+    private async Task Continuar()
+    {
+        if (_pasoPendiente == PasoConfirmacion.Cupo) _cupoConfirmado = true;
+        else if (_pasoPendiente == PasoConfirmacion.Monto) _montoConfirmado = true;
+
+        _pasoPendiente = PasoConfirmacion.Ninguno;
+        await Fiar();
+    }
+
+    private void CancelarConfirmacion()
+    {
+        _confirmacion = null;
+        _pasoPendiente = PasoConfirmacion.Ninguno;
+        _cupoConfirmado = false;
+        _montoConfirmado = false;
+    }
+
+    private async Task Emitir()
+    {
+        _confirmacion = null;
+
+        var fiado = _clienteNuevo
+            ? new VentaFiada(
+                IdDeudor: 0,
+                NombreCliente: _nombreNuevo.Trim(),
+                Identificacion: _identNuevo.Trim(),
+                Telefono: _telNuevo.Trim(),
+                CupoMaximo: LeerCupoNuevo(),
+                Valor: Monto,
+                Descripcion: _descripcion.Trim())
+            : new VentaFiada(
+                IdDeudor: _idSeleccionado,
+                NombreCliente: _nombreSeleccionado ?? string.Empty,
+                Identificacion: null,
+                Telefono: null,
+                CupoMaximo: _cupoSeleccionado,
+                Valor: Monto,
+                Descripcion: _descripcion.Trim());
+
+        await OnFiar.InvokeAsync(fiado);
+    }
+
+    // Mismas reglas que FrmFiarVenta.aplicarValidaciones.
+    private async Task<string?> ValidarAsync()
+    {
+        if (_clienteNuevo)
+        {
+            var nombre = _nombreNuevo.Trim();
+            var identificacion = _identNuevo.Trim();
+            var telefono = _telNuevo.Trim();
+            var cupo = _cupoNuevo.Trim();
+
+            if (nombre.Length == 0) return "El nombre del cliente es obligatorio.";
+
+            if (identificacion.Length > 0 && !FormatosTexto.IsNumber(identificacion))
+                return "La identificacion solo debe contener numeros.";
+
+            if (identificacion.Length > 0 && await DeudoresRepo.ExisteIdentificacionAsync(identificacion))
+                return $"Ya existe un deudor registrado con la identificacion {identificacion}. Buscalo en la lista.";
+
+            if (telefono.Length > 0 && !FormatosTexto.IsNumber(telefono))
+                return "El telefono solo debe contener numeros.";
+
+            if (telefono.Length > 10) return "El campo telefono solo debe tener 10 digitos.";
+
+            if (cupo.Length > 0 && !FormatosTexto.IsNumberDecimal(cupo))
+                return "El cupo maximo debe ser numerico.";
+        }
+        else if (_idSeleccionado <= 0)
+        {
+            return "Selecciona un cliente de la lista o registra uno nuevo.";
+        }
+
+        var valor = _valor.Trim();
+        if (valor.Length == 0) return "El valor a fiar es obligatorio.";
+        if (!FormatosTexto.IsNumberDecimal(valor)) return "El valor a fiar debe ser numerico.";
+        if (FormatosTexto.ParseValorMoneda(valor) <= 0) return "El valor a fiar debe ser mayor a cero (0).";
+
+        return null;
+    }
+
+    private Task Cancelar() => OnCancelar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnCancelar.InvokeAsync();
+    }
+}

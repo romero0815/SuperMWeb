@@ -76,6 +76,9 @@
         <button class="btn-cobrar" disabled="@(State.Items.Count == 0)" @onclick="AbrirCobro">
             COBRAR (F10)
         </button>
+        <button class="btn-fiar" disabled="@(State.Items.Count == 0)" @onclick="AbrirFiar">
+            Fiar venta (F8)
+        </button>
         <button class="btn-cancelar" disabled="@(State.Items.Count == 0)" @onclick="CancelarVenta">
             Cancelar venta (Esc)
         </button>
@@ -85,6 +88,7 @@
         <span><kbd>Escanear</kbd> agrega al detalle</span>
         <span><kbd>F2</kbd> cambiar cantidad</span>
         <span><kbd>Del</kbd> eliminar linea seleccionada</span>
+        <span><kbd>F8</kbd> fiar</span>
         <span><kbd>F10</kbd> cobrar</span>
         <span><kbd>Esc</kbd> cancelar</span>
     </div>
@@ -95,6 +99,13 @@
     <CobroDialog Total="State.Total"
                  OnConfirmar="ConfirmarCobro"
                  OnCancelar="() => _mostrarCobro = false" />
+}
+
+@if (_mostrarFiar)
+{
+    <FiarVentaDialog TotalVenta="State.Total"
+                     OnFiar="ConfirmarFiado"
+                     OnCancelar="() => _mostrarFiar = false" />
 }
 
 @if (_mostrarCantidad && _seleccionada >= 0 && _seleccionada < State.Items.Count)
@@ -109,6 +120,8 @@
     private int _seleccionada = -1;
     private bool _mostrarCobro;
     private bool _mostrarCantidad;
+    private bool _mostrarFiar;
+    private string? _usuario;
     private FeedbackMsg? _feedback;
     private CancellationTokenSource? _feedbackCts;
     private int _idUsuario;
@@ -118,6 +131,9 @@
         var auth = await Auth.GetAuthenticationStateAsync();
         var claim = auth.User.FindFirst(ClaimTypes.NameIdentifier);
         _idUsuario = int.TryParse(claim?.Value, out var id) ? id : 0;
+
+        // DeudorMovimiento.Usuario guarda el nombre de usuario como texto libre.
+        _usuario = auth.User.FindFirst(ClaimTypes.Name)?.Value;
 
         State.OnCambio += OnVentaCambio;
     }
@@ -145,7 +161,7 @@
 
     private async void OnEscaneo(string codigo)
     {
-        if (_mostrarCobro || _mostrarCantidad) return;
+        if (_mostrarCobro || _mostrarCantidad || _mostrarFiar) return;
         await InvokeAsync(async () => await ProcesarEscaneoAsync(codigo));
     }
 
@@ -213,7 +229,7 @@
 
     private async Task OnKeyDown(KeyboardEventArgs e)
     {
-        if (_mostrarCobro || _mostrarCantidad) return;
+        if (_mostrarCobro || _mostrarCantidad || _mostrarFiar) return;
 
         switch (e.Key)
         {
@@ -226,6 +242,9 @@
                     State.EliminarLinea(_seleccionada);
                     _seleccionada = Math.Min(_seleccionada, State.Items.Count - 1);
                 }
+                break;
+            case "F8":
+                if (State.Items.Count > 0) _mostrarFiar = true;
                 break;
             case "F10":
                 if (State.Items.Count > 0) _mostrarCobro = true;
@@ -245,6 +264,8 @@
     }
 
     private void AbrirCobro() { if (State.Items.Count > 0) _mostrarCobro = true; }
+
+    private void AbrirFiar() { if (State.Items.Count > 0) _mostrarFiar = true; }
 
     private Task AplicarNuevaCantidad(int nueva)
     {
@@ -293,6 +314,51 @@
         _seleccionada = -1;
         await State.LimpiarStorageAsync(JS);
         await MostrarFeedback("exito", $"Venta registrada. Cambio: {(recibido - total).ToString("C0")}");
+    }
+
+    // Venta fiada. A diferencia del cobro normal, la venta y el cargo al deudor
+    // se registran en una sola transaccion: si algo falla no queda ni la venta
+    // ni la deuda. La impresion va despues, fuera de la transaccion.
+    private async Task ConfirmarFiado(VentaFiada fiado)
+    {
+        _mostrarFiar = false;
+
+        var total = State.Total;
+        var items = State.Items.ToList();
+
+        try
+        {
+            await VentasRepo.RegistrarVentaFiadaAsync(_idUsuario, _usuario, total, items, fiado);
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo fiar la venta: {ex.Message}");
+            await Ui.BeepAsync(220, 400);
+            return;
+        }
+
+        try
+        {
+            var nombreNegocio = Config["Negocio:Nombre"] ?? "";
+            var bytes = TicketBuilder.ConstruirFactura(items, total, nombreNegocio);
+            var res = await Printer.ImprimirAsync(bytes);
+            if (!res.Exitoso)
+            {
+                await MostrarFeedback("error", $"Venta fiada registrada pero fallo la impresion: {res.MensajeError}");
+                await Ui.BeepAsync(220, 250);
+            }
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"Venta fiada registrada. Error al imprimir: {ex.Message}");
+            await Ui.BeepAsync(220, 250);
+        }
+
+        State.Reiniciar();
+        _seleccionada = -1;
+        await State.LimpiarStorageAsync(JS);
+        await MostrarFeedback("exito",
+            $"Venta fiada a {fiado.NombreCliente} por {fiado.Valor.ToString("C0")}.");
     }
 
     private async Task MostrarFeedback(string tipo, string mensaje)

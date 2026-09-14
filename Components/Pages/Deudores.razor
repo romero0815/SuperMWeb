@@ -1,0 +1,287 @@
+@page "/deudores"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@using SuperMWeb.Components.Dialogs
+@inject IDeudoresRepository DeudoresRepo
+@inject NavigationManager Nav
+
+@* Equivalente de DeudoresForm del desktop: listado de clientes que deben,
+   con el saldo calculado, busqueda y acciones por fila. *@
+
+<PageTitle>Deudores - SuperM</PageTitle>
+
+<div class="pagina">
+
+    <div class="pagina-header">
+        <h1>Deudores</h1>
+        <div class="acciones">
+            <button class="btn btn-exito" @onclick="AbrirNuevo">Nuevo deudor</button>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="feedback @_feedback.Tipo">@_feedback.Mensaje</div>
+    }
+
+    <div class="tarjetas">
+        <div class="tarjeta compra">
+            <p class="titulo">Total adeudado</p>
+            <div class="valor">@_deudores.Sum(d => d.Saldo).ToString("C0")</div>
+        </div>
+        <div class="tarjeta">
+            <p class="titulo">Clientes listados</p>
+            <div class="valor">@_deudores.Count</div>
+        </div>
+        <div class="tarjeta venta">
+            <p class="titulo">Con saldo pendiente</p>
+            <div class="valor">@_deudores.Count(d => d.Saldo > 0)</div>
+        </div>
+    </div>
+
+    <section class="panel">
+        <div class="filtros">
+            <div class="campo">
+                <label for="buscarDeudor">Buscar</label>
+                <input id="buscarDeudor" class="busqueda" @bind="_filtro" @bind:event="oninput"
+                       @bind:after="Cargar" placeholder="Nombre, identificacion o telefono" autocomplete="off" />
+            </div>
+            <label class="check-inline">
+                <input type="checkbox" @bind="_soloConSaldo" @bind:after="Cargar" />
+                Solo con saldo
+            </label>
+        </div>
+
+        <div class="tabla-scroll">
+            <table class="tabla">
+                <thead>
+                    <tr>
+                        <th class="numero">Id</th>
+                        <th>Cliente</th>
+                        <th>Identificacion</th>
+                        <th>Telefono</th>
+                        <th class="numero">Cupo maximo</th>
+                        <th class="numero">Saldo</th>
+                        <th>Creado</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_cargando)
+                    {
+                        <tr><td colspan="8" class="vacio-fila">Cargando...</td></tr>
+                    }
+                    else if (_deudores.Count == 0)
+                    {
+                        <tr><td colspan="8" class="vacio-fila">Sin deudores que coincidan con la busqueda.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var d in _paginaDeudores)
+                        {
+                            <tr>
+                                <td class="numero">@d.IdDeudor</td>
+                                <td>@d.NombreCliente</td>
+                                <td>@d.Identificacion</td>
+                                <td>@d.Telefono</td>
+                                <td class="numero">@(d.CupoMaximo is null ? "Sin limite" : d.CupoMaximo.Value.ToString("C0"))</td>
+                                <td class="numero @(d.SuperaCupo ? "saldo-excedido" : "saldo")">@d.Saldo.ToString("C0")</td>
+                                <td>@d.FechaCreacion.ToString("dd/MM/yyyy")</td>
+                                <td class="acciones-fila">
+                                    <button class="btn btn-secundario btn-mini"
+                                            @onclick="() => VerDetalle(d.IdDeudor)">Ver detalle</button>
+                                    <button class="btn btn-exito btn-mini" @onclick="() => _abonoPara = d">Abonar</button>
+                                    <button class="btn btn-primario btn-mini" @onclick="() => AbrirEdicion(d.IdDeudor)">Editar</button>
+                                    <button class="btn btn-peligro btn-mini" @onclick="() => PedirBaja(d)">Eliminar</button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+                @if (_deudores.Count > 0)
+                {
+                    <tfoot>
+                        <tr>
+                            <td colspan="5">Total adeudado</td>
+                            <td class="numero">@_deudores.Sum(d => d.Saldo).ToString("C0")</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        </div>
+
+        <Paginador TotalFilas="_deudores.Count"
+                   Pagina="_paginaActual"
+                   TamanoPagina="_tamanoPagina"
+                   OnCambiarPagina="(int p) => _paginaActual = p"
+                   OnCambiarTamano="CambiarTamano" />
+
+        <p class="nota">
+            El saldo se calcula sumando los cargos y restando los abonos no anulados. En rojo, los que superan su cupo.
+            Los totales de arriba cubren todo el resultado de la busqueda, no solo la pagina visible.
+        </p>
+    </section>
+</div>
+
+@if (_mostrarFormulario)
+{
+    <DeudorDialog IdDeudor="_idEnEdicion"
+                  OnGuardado="DeudorGuardado"
+                  OnCancelar="() => _mostrarFormulario = false" />
+}
+
+@if (_abonoPara is not null)
+{
+    <AbonoDialog IdDeudor="_abonoPara.IdDeudor"
+                 OnGuardado="AbonoGuardado"
+                 OnCancelar="() => _abonoPara = null" />
+}
+
+@if (_bajaPendiente is not null)
+{
+    <ConfirmDialog Titulo="Eliminar deudor"
+                   Mensaje="@($"Deseas eliminar a \"{_bajaPendiente.NombreCliente}\"? Dejara de aparecer en el listado.")"
+                   Peligro="true"
+                   OnAceptar="ConfirmarBaja"
+                   OnCancelar="() => _bajaPendiente = null" />
+}
+
+@code {
+    private IReadOnlyList<DeudorListado> _deudores = Array.Empty<DeudorListado>();
+    private string _filtro = string.Empty;
+    private bool _soloConSaldo;
+    private bool _cargando = true;
+
+    private int _paginaActual = 1;
+    private int _tamanoPagina = 25;
+
+    private IEnumerable<DeudorListado> _paginaDeudores =>
+        _deudores.Skip((_paginaActual - 1) * _tamanoPagina).Take(_tamanoPagina);
+
+    private bool _mostrarFormulario;
+    private int _idEnEdicion;
+    private DeudorListado? _abonoPara;
+    private DeudorListado? _bajaPendiente;
+
+    private FeedbackMsg? _feedback;
+    private CancellationTokenSource? _feedbackCts;
+
+    protected override Task OnInitializedAsync() => Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        try
+        {
+            _deudores = await DeudoresRepo.ListarAsync(_filtro, _soloConSaldo);
+
+            // Un filtro nuevo puede dejar menos paginas que la actual.
+            AjustarPagina();
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudieron cargar los deudores: {ex.Message}");
+            _deudores = Array.Empty<DeudorListado>();
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void CambiarTamano(int tamano)
+    {
+        _tamanoPagina = tamano;
+        AjustarPagina();
+    }
+
+    private void AjustarPagina()
+    {
+        var totalPaginas = Math.Max(1, (int)Math.Ceiling(_deudores.Count / (double)_tamanoPagina));
+        if (_paginaActual > totalPaginas) _paginaActual = totalPaginas;
+    }
+
+    private void VerDetalle(int idDeudor) => Nav.NavigateTo($"/deudores/{idDeudor}");
+
+    private void AbrirNuevo()
+    {
+        _idEnEdicion = 0;
+        _mostrarFormulario = true;
+    }
+
+    private void AbrirEdicion(int id)
+    {
+        _idEnEdicion = id;
+        _mostrarFormulario = true;
+    }
+
+    private async Task DeudorGuardado(string mensaje)
+    {
+        _mostrarFormulario = false;
+        await Cargar();
+        await MostrarFeedback("exito", mensaje);
+    }
+
+    private async Task AbonoGuardado(string mensaje)
+    {
+        _abonoPara = null;
+        await Cargar();
+        await MostrarFeedback("exito", mensaje);
+    }
+
+    private async Task PedirBaja(DeudorListado d)
+    {
+        // El desktop no deja inactivar a un deudor que todavia debe dinero.
+        if (d.Saldo > 0)
+        {
+            await MostrarFeedback("error",
+                $"No se puede eliminar el deudor porque tiene un saldo pendiente de {d.Saldo.ToString("C0")}.");
+            return;
+        }
+
+        _bajaPendiente = d;
+    }
+
+    private async Task ConfirmarBaja()
+    {
+        var d = _bajaPendiente;
+        _bajaPendiente = null;
+        if (d is null) return;
+
+        try
+        {
+            await DeudoresRepo.DesactivarAsync(d.IdDeudor);
+            await Cargar();
+            await MostrarFeedback("exito", "Deudor eliminado correctamente.");
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo eliminar: {ex.Message}");
+        }
+    }
+
+    private async Task MostrarFeedback(string tipo, string mensaje)
+    {
+        _feedbackCts?.Cancel();
+        _feedbackCts = new CancellationTokenSource();
+        var token = _feedbackCts.Token;
+
+        _feedback = new FeedbackMsg(tipo, mensaje);
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+            if (!token.IsCancellationRequested)
+            {
+                _feedback = null;
+                StateHasChanged();
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private record FeedbackMsg(string Tipo, string Mensaje);
+}

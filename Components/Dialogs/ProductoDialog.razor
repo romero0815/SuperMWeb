@@ -1,0 +1,275 @@
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@using SuperMWeb.Domain
+@inject IProductosRepository ProductosRepo
+@inject IProveedoresRepository ProveedoresRepo
+
+@* Equivalente de FrmProductosForm del desktop: alta y edicion de un producto
+   con las mismas validaciones.
+
+   En ModoCompra el producto se da de alta con Stock = 0 y la cantidad digitada
+   se devuelve al llamador para que entre como linea de la compra. Asi el stock
+   lo sube una sola vez el trigger de MovimientosInventario. Ver R19. *@
+
+<div class="modal-backdrop" @onclick="Cancelar">
+    <div class="modal modal-form" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
+        <h2>@(EsEdicion ? "Editar producto" : "Agregar producto")</h2>
+
+        @if (_error is not null)
+        {
+            <div class="feedback error">@_error</div>
+        }
+
+        <div class="form-rejilla">
+            <div class="campo-form ancho-total">
+                <label for="pCodigo">Codigo de barras</label>
+                <input id="pCodigo" @bind="_codigoBarras" @bind:event="oninput"
+                       @bind:after="VerificarCodigo" autocomplete="off" />
+                @if (_codigoDuplicado)
+                {
+                    <span class="campo-error">Ese codigo ya esta registrado en otro producto.</span>
+                }
+            </div>
+
+            <div class="campo-form ancho-total">
+                <label for="pNombre">Nombre *</label>
+                <input id="pNombre" @bind="_nombre" @bind:event="oninput" autocomplete="off" />
+            </div>
+
+            <div class="campo-form ancho-total">
+                <label for="pDescripcion">Descripcion</label>
+                <input id="pDescripcion" @bind="_descripcion" @bind:event="oninput" autocomplete="off" />
+            </div>
+
+            <div class="campo-form">
+                <label for="pPrecioC">Precio compra *</label>
+                <input id="pPrecioC" inputmode="decimal" @bind="_precioCompra" @bind:event="oninput" autocomplete="off" />
+            </div>
+
+            <div class="campo-form">
+                <label for="pPrecioV">Precio venta *</label>
+                <input id="pPrecioV" inputmode="decimal" @bind="_precioVenta" @bind:event="oninput" autocomplete="off" />
+            </div>
+
+            <div class="campo-form">
+                <label for="pStock">@(ModoCompra ? "Cantidad a comprar *" : "Stock *")</label>
+                <input id="pStock" inputmode="numeric" @bind="_stock" @bind:event="oninput" autocomplete="off" />
+                @if (ModoCompra)
+                {
+                    <span class="campo-ayuda">Entra como linea de la compra; el producto se crea en cero.</span>
+                }
+            </div>
+
+            <div class="campo-form">
+                <label for="pProveedor">Proveedor</label>
+                <select id="pProveedor" @bind="_idProveedor">
+                    @foreach (var p in _proveedores)
+                    {
+                        <option value="@p.IdProveedor">@p.Nombre</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="acciones">
+            <button class="btn-secondary" @onclick="Cancelar">Cancelar (Esc)</button>
+            <button class="btn-primary" disabled="@_guardando" @onclick="Guardar">
+                @(_guardando ? "Guardando..." : EsEdicion ? "Actualizar" : "Agregar")
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    // 0 = alta. Cualquier otro valor carga ese producto para editarlo.
+    [Parameter] public int IdProducto { get; set; }
+
+    // Alta desde la pantalla de compras: el campo Stock pasa a significar
+    // "cantidad a comprar", el producto se crea con Stock = 0 y esa cantidad
+    // vuelve en el resultado para que la compra la registre. Sin esto el stock
+    // se contaba dos veces (R19).
+    [Parameter] public bool ModoCompra { get; set; }
+
+    // Emite el producto guardado: el id recien creado en un alta, o el mismo
+    // que entro al editar, mas la cantidad digitada.
+    [Parameter] public EventCallback<Resultado> OnGuardado { get; set; }
+
+    public record Resultado(int IdProducto, int Cantidad, bool EsAlta);
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private bool EsEdicion => IdProducto > 0;
+
+    private string _codigoBarras = string.Empty;
+    private string _nombre = string.Empty;
+    private string _descripcion = string.Empty;
+    private string _precioCompra = string.Empty;
+    private string _precioVenta = string.Empty;
+    private string _stock = string.Empty;
+    private int? _idProveedor;
+
+    private IReadOnlyList<Proveedor> _proveedores = Array.Empty<Proveedor>();
+    private bool _codigoDuplicado;
+    private bool _guardando;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _proveedores = await ProveedoresRepo.ListarActivosAsync();
+
+            // El desktop preselecciona el proveedor centinela "Ninguno".
+            _idProveedor = _proveedores.FirstOrDefault(p =>
+                string.Equals(p.Nombre, "Ninguno", StringComparison.OrdinalIgnoreCase))?.IdProveedor
+                ?? _proveedores.FirstOrDefault()?.IdProveedor;
+
+            if (EsEdicion)
+            {
+                var p = await ProductosRepo.ObtenerPorIdAsync(IdProducto);
+                if (p is null)
+                {
+                    _error = "El producto ya no existe.";
+                    return;
+                }
+
+                _codigoBarras = p.CodigoBarras ?? string.Empty;
+                _nombre = p.Nombre;
+                _descripcion = p.Descripcion ?? string.Empty;
+                _precioCompra = p.PrecioCompra.ToString("0.##");
+                _precioVenta = p.PrecioVenta.ToString("0.##");
+                _stock = p.Stock.ToString();
+                if (p.IdProveedor is not null) _idProveedor = p.IdProveedor;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudo cargar el formulario: {ex.Message}";
+        }
+    }
+
+    // Aviso temprano al salir del campo, igual que el KeyDown del desktop.
+    // La validacion que realmente bloquea el guardado esta en Validar().
+    private async Task VerificarCodigo()
+    {
+        var codigo = _codigoBarras.Trim();
+        if (codigo.Length == 0) { _codigoDuplicado = false; return; }
+
+        try
+        {
+            _codigoDuplicado = await ProductosRepo.ExisteCodigoBarrasAsync(
+                codigo, EsEdicion ? IdProducto : null);
+        }
+        catch
+        {
+            _codigoDuplicado = false;
+        }
+    }
+
+    private async Task Guardar()
+    {
+        _error = null;
+        var problema = await ValidarAsync();
+        if (problema is not null)
+        {
+            _error = problema;
+            return;
+        }
+
+        _guardando = true;
+        try
+        {
+            var cantidad = int.Parse(_stock.Trim());
+
+            // En un alta desde compras el producto nace en cero: las unidades
+            // las suma el trigger cuando se registre la compra. Si se guardara
+            // con la cantidad digitada, la existencia quedaria al doble (R19).
+            var esAltaDesdeCompra = ModoCompra && !EsEdicion;
+
+            var producto = new Producto
+            {
+                IdProducto = IdProducto,
+                Nombre = _nombre.Trim(),
+                Descripcion = string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim(),
+                PrecioCompra = FormatosTexto.ParseDecimal(_precioCompra.Trim()),
+                PrecioVenta = FormatosTexto.ParseDecimal(_precioVenta.Trim()),
+                Stock = esAltaDesdeCompra ? 0 : cantidad,
+                IdProveedor = _idProveedor,
+                CodigoBarras = string.IsNullOrWhiteSpace(_codigoBarras) ? null : _codigoBarras.Trim()
+            };
+
+            int idResultante;
+            if (EsEdicion)
+            {
+                await ProductosRepo.ActualizarAsync(producto);
+                idResultante = IdProducto;
+            }
+            else
+            {
+                // SCOPE_IDENTITY dentro del INSERT. El desktop leia
+                // IDENT_CURRENT('Productos') despues de cerrar el formulario,
+                // que devuelve el ultimo id de la tabla sin importar quien lo
+                // creo: con dos cajas podia traer el producto de otra sesion.
+                idResultante = await ProductosRepo.CrearAsync(producto);
+            }
+
+            await OnGuardado.InvokeAsync(new Resultado(idResultante, cantidad, !EsEdicion));
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudo guardar el producto: {ex.Message}";
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    // Mismas reglas que FrmProductosForm.aplicarValidaciones, en el mismo orden.
+    private async Task<string?> ValidarAsync()
+    {
+        var nombre = _nombre.Trim();
+        var precioC = _precioCompra.Trim();
+        var precioV = _precioVenta.Trim();
+        var stock = _stock.Trim();
+
+        // En ModoCompra el campo se rotula "Cantidad a comprar"; los mensajes
+        // acompanan para que no hablen de stock cuando el usuario ve otra cosa.
+        var campo = ModoCompra ? "La cantidad a comprar" : "El stock del producto";
+
+        if (nombre.Length == 0) return "El nombre del producto es obligatorio.";
+        if (precioC.Length == 0) return "El precio de compra del producto es obligatorio.";
+        if (precioV.Length == 0) return "El precio de venta del producto es obligatorio.";
+        if (stock.Length == 0) return $"{campo} es obligatorio.";
+
+        if (!FormatosTexto.IsNumberDecimal(precioV)) return "El precio de venta del producto debe ser numerico.";
+        if (!FormatosTexto.IsNumberDecimal(precioC)) return "El precio de compra del producto debe ser numerico.";
+        if (!FormatosTexto.IsNumber(stock)) return $"{campo} debe ser numerico.";
+
+        if (FormatosTexto.ParseDecimal(precioV) <= 0)
+            return "El precio de venta del producto no puede ser negativo o cero (0).";
+        if (FormatosTexto.ParseDecimal(precioC) <= 0)
+            return "El precio de compra del producto no puede ser negativo o cero (0).";
+        if (int.Parse(stock) <= 0)
+            return $"{campo} no puede ser negativo o cero (0).";
+
+        // El desktop solo valida el duplicado al crear. Aqui tambien se valida
+        // al editar, excluyendo el propio producto: sin eso, editar cualquier
+        // campo de un producto con codigo de barras lo dejaba pasar aunque otro
+        // producto ya tuviera ese mismo codigo.
+        var codigo = _codigoBarras.Trim();
+        if (codigo.Length > 0 &&
+            await ProductosRepo.ExisteCodigoBarrasAsync(codigo, EsEdicion ? IdProducto : null))
+        {
+            return $"El producto con el codigo {codigo} ya esta registrado en el sistema.";
+        }
+
+        return null;
+    }
+
+    private Task Cancelar() => OnCancelar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnCancelar.InvokeAsync();
+    }
+}

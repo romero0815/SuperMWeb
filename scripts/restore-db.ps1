@@ -13,7 +13,7 @@ param(
     [Parameter(Mandatory)]
     [string]$BakFile,
     [string]$Server   = "localhost",
-    [string]$Database = "SuperM",
+    [string]$Database = "SuperM2",
     [string]$ServiceName = "SuperMWeb"
 )
 

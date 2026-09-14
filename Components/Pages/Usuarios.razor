@@ -1,0 +1,335 @@
+@page "/usuarios"
+@attribute [Authorize(Roles = "SuperAdmin")]
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@using SuperMWeb.Components.Dialogs
+@using SuperMWeb.Domain
+@inject IUsuariosRepository UsuariosRepo
+
+@* Equivalente de UsuariosForm del desktop. Igual que alli, el rol SuperAdmin
+   (IdRol 3) no se lista ni se puede asignar desde esta pantalla.
+
+   La clave viaja y se guarda en texto plano, igual que el desktop: es la
+   deuda tecnica R2 del inventario, no un descuido de la migracion. *@
+
+<PageTitle>Usuarios - SuperM</PageTitle>
+
+<div class="pagina">
+
+    <div class="pagina-header">
+        <h1>Usuarios</h1>
+        <div class="acciones">
+            <button class="btn btn-exito" @onclick="AbrirNuevo">Nuevo usuario</button>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="feedback @_feedback.Tipo">@_feedback.Mensaje</div>
+    }
+
+    <section class="panel">
+        <div class="tabla-scroll">
+            <table class="tabla">
+                <thead>
+                    <tr>
+                        <th class="numero">#</th>
+                        <th>Nombre</th>
+                        <th>Usuario</th>
+                        <th>Rol</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_cargando)
+                    {
+                        <tr><td colspan="5" class="vacio-fila">Cargando...</td></tr>
+                    }
+                    else if (_usuarios.Count == 0)
+                    {
+                        <tr><td colspan="5" class="vacio-fila">Todavia no hay usuarios registrados.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var u in _usuarios)
+                        {
+                            <tr>
+                                <td class="numero">@u.IdUsuario</td>
+                                <td>@u.Nombre</td>
+                                <td>@u.Usuario</td>
+                                <td>@u.NombreRol</td>
+                                <td class="acciones-fila">
+                                    <button class="btn btn-primario btn-mini" @onclick="() => AbrirEdicion(u)">Editar</button>
+                                    <button class="btn btn-peligro btn-mini" @onclick="() => _bajaPendiente = u">Eliminar</button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@if (_mostrarFormulario)
+{
+    <div class="modal-backdrop" @onclick="Cerrar">
+        <div class="modal modal-form" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
+            <h2>@(_idEnEdicion > 0 ? "Actualizar usuario" : "Agregar usuario")</h2>
+
+            @if (_errorFormulario is not null)
+            {
+                <div class="feedback error">@_errorFormulario</div>
+            }
+
+            <div class="form-rejilla">
+                <div class="campo-form ancho-total">
+                    <label for="usNombre">Nombre *</label>
+                    <input id="usNombre" @bind="_nombre" @bind:event="oninput" autocomplete="off" />
+                </div>
+                <div class="campo-form">
+                    <label for="usUsuario">Usuario *</label>
+                    @* El desktop bloquea el nombre de usuario al editar. *@
+                    <input id="usUsuario" @bind="_usuario" @bind:event="oninput"
+                           disabled="@(_idEnEdicion > 0)" autocomplete="off" />
+                </div>
+                <div class="campo-form">
+                    <label for="usClave">Contrasena *</label>
+                    <div class="campo-clave">
+                        <input id="usClave" type="@(_verClave ? "text" : "password")"
+                               @bind="_clave" @bind:event="oninput" autocomplete="new-password" />
+                        <button type="button" class="btn btn-secundario btn-mini"
+                                @onclick="() => _verClave = !_verClave">
+                            @(_verClave ? "Ocultar" : "Ver")
+                        </button>
+                    </div>
+                </div>
+                <div class="campo-form">
+                    <label for="usRol">Rol *</label>
+                    <select id="usRol" @bind="_idRol">
+                        @foreach (var r in _roles)
+                        {
+                            <option value="@r.IdRol">@r.NombreRol</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="acciones">
+                <button class="btn-secondary" @onclick="Cerrar">Cancelar (Esc)</button>
+                <button class="btn-primary" disabled="@_guardando" @onclick="Guardar">
+                    @(_guardando ? "Guardando..." : _idEnEdicion > 0 ? "Actualizar" : "Guardar")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_bajaPendiente is not null)
+{
+    <ConfirmDialog Titulo="Eliminar usuario"
+                   Mensaje="@($"Deseas eliminar a \"{_bajaPendiente.Nombre}\"? No podra volver a iniciar sesion.")"
+                   Peligro="true"
+                   OnAceptar="ConfirmarBaja"
+                   OnCancelar="() => _bajaPendiente = null" />
+}
+
+@code {
+    private IReadOnlyList<UsuarioListado> _usuarios = Array.Empty<UsuarioListado>();
+    private IReadOnlyList<Rol> _roles = Array.Empty<Rol>();
+    private bool _cargando = true;
+
+    private bool _mostrarFormulario;
+    private int _idEnEdicion;
+    private string _nombre = string.Empty;
+    private string _usuario = string.Empty;
+    private string _clave = string.Empty;
+    private int _idRol;
+    private bool _verClave;
+    private bool _guardando;
+    private string? _errorFormulario;
+
+    private UsuarioListado? _bajaPendiente;
+
+    private FeedbackMsg? _feedback;
+    private CancellationTokenSource? _feedbackCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _roles = await UsuariosRepo.ListarRolesAsignablesAsync();
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudieron cargar los roles: {ex.Message}");
+        }
+
+        await Cargar();
+    }
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        try
+        {
+            _usuarios = await UsuariosRepo.ListarAsync();
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudieron cargar los usuarios: {ex.Message}");
+            _usuarios = Array.Empty<UsuarioListado>();
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void AbrirNuevo()
+    {
+        _idEnEdicion = 0;
+        _nombre = _usuario = _clave = string.Empty;
+        _verClave = false;
+        _errorFormulario = null;
+
+        // El desktop preselecciona "Administrador".
+        _idRol = _roles.FirstOrDefault(r =>
+            string.Equals(r.NombreRol, "Administrador", StringComparison.OrdinalIgnoreCase))?.IdRol
+            ?? _roles.FirstOrDefault()?.IdRol ?? 0;
+
+        _mostrarFormulario = true;
+    }
+
+    private async Task AbrirEdicion(UsuarioListado u)
+    {
+        _errorFormulario = null;
+        _verClave = false;
+
+        try
+        {
+            var completo = await UsuariosRepo.ObtenerPorIdAsync(u.IdUsuario);
+            if (completo is null)
+            {
+                await MostrarFeedback("error", "El usuario ya no existe.");
+                return;
+            }
+
+            _idEnEdicion = completo.IdUsuario;
+            _nombre = completo.Nombre;
+            _usuario = completo.UsuarioLogin;
+            _clave = completo.Clave;
+            _idRol = completo.IdRol;
+            _mostrarFormulario = true;
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo cargar el usuario: {ex.Message}");
+        }
+    }
+
+    private void Cerrar() => _mostrarFormulario = false;
+
+    private async Task Guardar()
+    {
+        _errorFormulario = await ValidarAsync();
+        if (_errorFormulario is not null) return;
+
+        _guardando = true;
+        try
+        {
+            var usuario = new Usuario
+            {
+                IdUsuario = _idEnEdicion,
+                Nombre = _nombre.Trim(),
+                UsuarioLogin = _usuario.Trim(),
+                Clave = _clave.Trim(),
+                IdRol = _idRol
+            };
+
+            var eraEdicion = _idEnEdicion > 0;
+            if (eraEdicion) await UsuariosRepo.ActualizarAsync(usuario);
+            else await UsuariosRepo.CrearAsync(usuario);
+
+            _mostrarFormulario = false;
+            await Cargar();
+            await MostrarFeedback("exito",
+                eraEdicion ? "Usuario actualizado correctamente." : "Usuario creado correctamente.");
+        }
+        catch (Exception ex)
+        {
+            _errorFormulario = $"No se pudo guardar el usuario: {ex.Message}";
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    // Mismas reglas que UsuariosForm.aplicarValidaciones, en el mismo orden.
+    private async Task<string?> ValidarAsync()
+    {
+        var usuario = _usuario.Trim();
+        var clave = _clave.Trim();
+        var nombre = _nombre.Trim();
+
+        if (usuario.Length == 0) return "El campo usuario es obligatorio.";
+        if (clave.Length == 0) return "El campo contrasena es obligatorio.";
+        if (_idRol <= 0) return "El campo rol es obligatorio.";
+        if (nombre.Length == 0) return "El campo nombre es obligatorio.";
+
+        // El desktop solo valida el duplicado al crear, y al editar deja el
+        // usuario bloqueado, asi que el resultado es el mismo.
+        if (_idEnEdicion == 0 && await UsuariosRepo.ExisteUsuarioAsync(usuario))
+            return $"El usuario '{usuario}' ya existe. Ingrese uno diferente.";
+
+        return null;
+    }
+
+    private async Task ConfirmarBaja()
+    {
+        var u = _bajaPendiente;
+        _bajaPendiente = null;
+        if (u is null) return;
+
+        try
+        {
+            await UsuariosRepo.DesactivarAsync(u.IdUsuario);
+            await Cargar();
+            await MostrarFeedback("exito", "Usuario eliminado correctamente.");
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo eliminar: {ex.Message}");
+        }
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Cerrar();
+        else if (e.Key == "Enter") await Guardar();
+    }
+
+    private async Task MostrarFeedback(string tipo, string mensaje)
+    {
+        _feedbackCts?.Cancel();
+        _feedbackCts = new CancellationTokenSource();
+        var token = _feedbackCts.Token;
+
+        _feedback = new FeedbackMsg(tipo, mensaje);
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+            if (!token.IsCancellationRequested)
+            {
+                _feedback = null;
+                StateHasChanged();
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private record FeedbackMsg(string Tipo, string Mensaje);
+}

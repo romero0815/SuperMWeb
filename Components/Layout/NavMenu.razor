@@ -1,0 +1,30 @@
+@using Microsoft.AspNetCore.Components.Authorization
+
+@* Menu principal. La visibilidad por rol replica MainForm.AplicarPermisos
+   del desktop:
+     Administrador -> Ventas, Compras, Reportes, Productos, Deudores
+     Cajero        -> Ventas, Reportes, Deudores
+     SuperAdmin    -> todo, incluida Gestion de usuarios (Usuarios/Proveedores)
+   "Gestion de usuarios" agrupa Usuarios y Proveedores igual que el menu del
+   desktop, por eso Proveedores solo lo ve SuperAdmin. *@
+
+<AuthorizeView>
+    <Authorized>
+        <nav class="kiosk-nav">
+            <NavLink class="nav-item" href="/venta" Match="NavLinkMatch.Prefix">Ventas</NavLink>
+
+            <AuthorizeView Roles="Administrador,SuperAdmin" Context="admin">
+                <NavLink class="nav-item" href="/compras" Match="NavLinkMatch.Prefix">Compras</NavLink>
+                <NavLink class="nav-item" href="/productos" Match="NavLinkMatch.Prefix">Productos</NavLink>
+            </AuthorizeView>
+
+            <NavLink class="nav-item" href="/reportes" Match="NavLinkMatch.Prefix">Reportes</NavLink>
+            <NavLink class="nav-item" href="/deudores" Match="NavLinkMatch.Prefix">Deudores</NavLink>
+
+            <AuthorizeView Roles="SuperAdmin" Context="super">
+                <NavLink class="nav-item" href="/usuarios" Match="NavLinkMatch.Prefix">Usuarios</NavLink>
+                <NavLink class="nav-item" href="/proveedores" Match="NavLinkMatch.Prefix">Proveedores</NavLink>
+            </AuthorizeView>
+        </nav>
+    </Authorized>
+</AuthorizeView>

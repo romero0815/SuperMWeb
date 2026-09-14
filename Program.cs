@@ -6,6 +6,7 @@ using SuperMWeb.Api;
 using SuperMWeb.Application;
 using SuperMWeb.Components;
 using SuperMWeb.Infrastructure.Data;
+using SuperMWeb.Infrastructure.Excel;
 using SuperMWeb.Infrastructure.Printers;
 
 // Serilog leido desde appsettings.json (Serilog seccion).
@@ -45,6 +46,11 @@ builder.Services.AddSingleton(new SqlConnectionFactory(connectionString));
 builder.Services.AddScoped<IProductosRepository, ProductosRepository>();
 builder.Services.AddScoped<IVentasRepository, VentasRepository>();
 builder.Services.AddScoped<IUsuariosRepository, UsuariosRepository>();
+builder.Services.AddScoped<IReportesRepository, ReportesRepository>();
+builder.Services.AddScoped<IProveedoresRepository, ProveedoresRepository>();
+builder.Services.AddScoped<IComprasRepository, ComprasRepository>();
+builder.Services.AddScoped<IDeudoresRepository, DeudoresRepository>();
+builder.Services.AddScoped<IProductosExcel, ProductosExcel>();
 
 // Estado de venta, scanner y helpers de UI: Scoped por circuito Blazor.
 builder.Services.AddScoped<SuperMWeb.Services.VentaState>();
@@ -147,6 +153,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapVentaEndpoints();
+app.MapProductosEndpoints();
 app.MapAuthEndpoints();
 app.MapHealthChecks("/health");
 

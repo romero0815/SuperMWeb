@@ -1,0 +1,393 @@
+@page "/reportes"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@using SuperMWeb.Components.Dialogs
+@inject IReportesRepository ReportesRepo
+@inject NavigationManager Nav
+
+@* Equivalente de ReportesForm del desktop: tarjetas de inventario, grafico de
+   los 10 mas vendidos del mes, stock minimo y los dos paneles (ventas y
+   compras) que alternan entre vista diaria y rango de fechas. *@
+
+<PageTitle>Reportes - SuperM</PageTitle>
+
+<div class="pagina">
+
+    <div class="pagina-header">
+        <h1>Reportes</h1>
+        <div class="acciones">
+            <button class="btn btn-secundario" @onclick="RecargarTodo">Actualizar</button>
+            <button class="btn btn-primario" @onclick="@(() => Nav.NavigateTo("/reportes/ganancias"))">
+                Ganancias
+            </button>
+        </div>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="feedback error">@_error</div>
+    }
+
+    <!-- Tarjetas de inventario general -->
+    <div class="tarjetas">
+        <div class="tarjeta">
+            <p class="titulo">Productos activos</p>
+            <div class="valor">@_inventario.TotalProductos</div>
+        </div>
+        <div class="tarjeta">
+            <p class="titulo">Unidades en stock</p>
+            <div class="valor">@_inventario.TotalUnidades</div>
+        </div>
+        <div class="tarjeta compra">
+            <p class="titulo">Valor inventario (compra)</p>
+            <div class="valor">@_inventario.ValorTotalCompra.ToString("C0")</div>
+        </div>
+        <div class="tarjeta venta">
+            <p class="titulo">Valor inventario (venta)</p>
+            <div class="valor">@_inventario.ValorTotalVenta.ToString("C0")</div>
+        </div>
+    </div>
+
+    <div class="rejilla-2">
+
+        <!-- Panel de ventas -->
+        <section class="panel">
+            <div class="panel-barra">
+                <h2>Ventas</h2>
+                <div class="btn-grupo">
+                    <button class="@(_ventasRango ? null : "activo")" @onclick="() => CambiarModoVentas(false)">Hoy</button>
+                    <button class="@(_ventasRango ? "activo" : null)" @onclick="() => CambiarModoVentas(true)">Por fechas</button>
+                </div>
+            </div>
+
+            @if (_ventasRango)
+            {
+                <div class="filtros">
+                    <div class="campo">
+                        <label for="vDesde">Desde</label>
+                        <input id="vDesde" type="date" @bind="_ventasDesde" @bind:after="CargarVentas" />
+                    </div>
+                    <div class="campo">
+                        <label for="vHasta">Hasta</label>
+                        <input id="vHasta" type="date" @bind="_ventasHasta" @bind:after="CargarVentas" />
+                    </div>
+                </div>
+            }
+
+            <div class="tabla-scroll">
+                <table class="tabla">
+                    <thead>
+                        <tr>
+                            <th class="numero">#</th>
+                            <th>Fecha</th>
+                            <th>Cajero</th>
+                            <th class="numero">Total</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_ventas.Count == 0)
+                        {
+                            <tr><td colspan="5" class="vacio-fila">Sin ventas en el periodo.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var v in _paginaVentas)
+                            {
+                                <tr>
+                                    <td class="numero">@v.IdFactura</td>
+                                    <td>@v.Fecha.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td>@v.Cajero</td>
+                                    <td class="numero">@v.Total.ToString("C0")</td>
+                                    <td>
+                                        <button class="btn btn-secundario btn-mini"
+                                                @onclick="() => VerDocumento(v.IdFactura, false)">Ver</button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                    @if (_ventas.Count > 0)
+                    {
+                        <tfoot>
+                            <tr>
+                                <td colspan="3">Total (@_ventas.Count)</td>
+                                <td class="numero">@_ventas.Sum(v => v.Total).ToString("C0")</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    }
+                </table>
+            </div>
+
+            <Paginador TotalFilas="_ventas.Count"
+                       Pagina="_paginaVentasActual"
+                       TamanoPagina="_tamanoVentas"
+                       Tamanos="@(new[] { 10, 25, 50, 100 })"
+                       OnCambiarPagina="(int p) => _paginaVentasActual = p"
+                       OnCambiarTamano="CambiarTamanoVentas" />
+        </section>
+
+        <!-- Panel de compras -->
+        <section class="panel">
+            <div class="panel-barra">
+                <h2>Compras</h2>
+                <div class="btn-grupo">
+                    <button class="@(_comprasRango ? null : "activo")" @onclick="() => CambiarModoCompras(false)">Hoy</button>
+                    <button class="@(_comprasRango ? "activo" : null)" @onclick="() => CambiarModoCompras(true)">Por fechas</button>
+                </div>
+            </div>
+
+            @if (_comprasRango)
+            {
+                <div class="filtros">
+                    <div class="campo">
+                        <label for="cDesde">Desde</label>
+                        <input id="cDesde" type="date" @bind="_comprasDesde" @bind:after="CargarCompras" />
+                    </div>
+                    <div class="campo">
+                        <label for="cHasta">Hasta</label>
+                        <input id="cHasta" type="date" @bind="_comprasHasta" @bind:after="CargarCompras" />
+                    </div>
+                </div>
+            }
+
+            <div class="tabla-scroll">
+                <table class="tabla">
+                    <thead>
+                        <tr>
+                            <th class="numero">#</th>
+                            <th>Fecha</th>
+                            <th>Proveedor</th>
+                            <th class="numero">Total</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_compras.Count == 0)
+                        {
+                            <tr><td colspan="5" class="vacio-fila">Sin compras en el periodo.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var c in _paginaCompras)
+                            {
+                                <tr>
+                                    <td class="numero">@c.IdCompra</td>
+                                    <td>@c.Fecha.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td>@c.Proveedor</td>
+                                    <td class="numero">@c.Total.ToString("C0")</td>
+                                    <td>
+                                        <button class="btn btn-secundario btn-mini"
+                                                @onclick="() => VerDocumento(c.IdCompra, true)">Ver</button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                    @if (_compras.Count > 0)
+                    {
+                        <tfoot>
+                            <tr>
+                                <td colspan="3">Total (@_compras.Count)</td>
+                                <td class="numero">@_compras.Sum(c => c.Total).ToString("C0")</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    }
+                </table>
+            </div>
+
+            <Paginador TotalFilas="_compras.Count"
+                       Pagina="_paginaComprasActual"
+                       TamanoPagina="_tamanoCompras"
+                       Tamanos="@(new[] { 10, 25, 50, 100 })"
+                       OnCambiarPagina="(int p) => _paginaComprasActual = p"
+                       OnCambiarTamano="CambiarTamanoCompras" />
+        </section>
+    </div>
+
+    <div class="rejilla-2">
+
+        <!-- Top 10 mas vendidos del mes -->
+        <section class="panel">
+            <h2>10 productos mas vendidos de @_nombreMes</h2>
+            @if (_masVendidos.Count == 0)
+            {
+                <p class="cargando">Sin ventas registradas este mes.</p>
+            }
+            else
+            {
+                var maximo = _masVendidos.Max(m => m.TotalVendido);
+                <div class="barras">
+                    @foreach (var m in _masVendidos)
+                    {
+                        var ancho = maximo == 0 ? 0 : (int)Math.Round(m.TotalVendido * 100.0 / maximo);
+                        <div class="barra-fila">
+                            <span class="nombre" title="@m.Producto">@m.Producto</span>
+                            <div class="pista"><div class="relleno" style="width:@(ancho)%"></div></div>
+                            <span class="cantidad">@m.TotalVendido</span>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <!-- Stock minimo -->
+        <section class="panel">
+            <h2>Productos con stock bajo (5 o menos)</h2>
+            <div class="tabla-scroll">
+                <table class="tabla">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th class="numero">Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_stockBajo.Count == 0)
+                        {
+                            <tr><td colspan="2" class="vacio-fila">Ningun producto por debajo del minimo.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var p in _stockBajo)
+                            {
+                                <tr>
+                                    <td>@p.Nombre</td>
+                                    <td class="numero"><span class="stock-pill bajo">@p.Stock</span></td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</div>
+
+@if (_documentoAbierto is not null)
+{
+    <DetalleDocumentoDialog Id="_documentoAbierto.Value.Id"
+                            EsCompra="_documentoAbierto.Value.EsCompra"
+                            OnCerrar="() => _documentoAbierto = null" />
+}
+
+@code {
+    private ResumenInventario _inventario = new(0, 0, 0m, 0m);
+    private IReadOnlyList<ProductoMasVendido> _masVendidos = Array.Empty<ProductoMasVendido>();
+    private IReadOnlyList<ProductoStockBajo> _stockBajo = Array.Empty<ProductoStockBajo>();
+    private IReadOnlyList<ResumenVenta> _ventas = Array.Empty<ResumenVenta>();
+    private IReadOnlyList<ResumenCompra> _compras = Array.Empty<ResumenCompra>();
+
+    private bool _ventasRango;
+    private bool _comprasRango;
+    private DateTime _ventasDesde = DateTime.Today;
+    private DateTime _ventasHasta = DateTime.Today;
+    private DateTime _comprasDesde = DateTime.Today;
+    private DateTime _comprasHasta = DateTime.Today;
+
+    private int _paginaVentasActual = 1;
+    private int _tamanoVentas = 10;
+    private int _paginaComprasActual = 1;
+    private int _tamanoCompras = 10;
+
+    // Los totales del pie siguen sumando TODO el periodo, no solo la pagina.
+    private IEnumerable<ResumenVenta> _paginaVentas =>
+        _ventas.Skip((_paginaVentasActual - 1) * _tamanoVentas).Take(_tamanoVentas);
+
+    private IEnumerable<ResumenCompra> _paginaCompras =>
+        _compras.Skip((_paginaComprasActual - 1) * _tamanoCompras).Take(_tamanoCompras);
+
+    private (int Id, bool EsCompra)? _documentoAbierto;
+    private string? _error;
+    private string _nombreMes = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _nombreMes = DateTime.Now.ToString("MMMM");
+        await RecargarTodo();
+    }
+
+    private async Task RecargarTodo()
+    {
+        _error = null;
+        try
+        {
+            _inventario = await ReportesRepo.ObtenerResumenInventarioAsync();
+            _masVendidos = await ReportesRepo.ListarMasVendidosDelMesAsync();
+            _stockBajo = await ReportesRepo.ListarStockBajoAsync();
+            await CargarVentas();
+            await CargarCompras();
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudieron cargar los reportes: {ex.Message}";
+        }
+    }
+
+    private async Task CambiarModoVentas(bool rango)
+    {
+        _ventasRango = rango;
+        await CargarVentas();
+    }
+
+    private async Task CambiarModoCompras(bool rango)
+    {
+        _comprasRango = rango;
+        await CargarCompras();
+    }
+
+    private async Task CargarVentas()
+    {
+        try
+        {
+            _ventas = _ventasRango
+                // El limite superior se desplaza un dia para que la fecha "hasta"
+                // quede incluida completa (el desktop hacia AddDays(1) al abrir).
+                ? await ReportesRepo.ListarVentasEntreAsync(_ventasDesde.Date, _ventasHasta.Date.AddDays(1))
+                : await ReportesRepo.ListarVentasDelDiaAsync();
+
+            _paginaVentasActual = 1;
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudieron cargar las ventas: {ex.Message}";
+            _ventas = Array.Empty<ResumenVenta>();
+        }
+    }
+
+    private async Task CargarCompras()
+    {
+        try
+        {
+            _compras = _comprasRango
+                ? await ReportesRepo.ListarComprasEntreAsync(_comprasDesde.Date, _comprasHasta.Date.AddDays(1))
+                : await ReportesRepo.ListarComprasDelDiaAsync();
+
+            _paginaComprasActual = 1;
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudieron cargar las compras: {ex.Message}";
+            _compras = Array.Empty<ResumenCompra>();
+        }
+    }
+
+    private void CambiarTamanoVentas(int tamano)
+    {
+        _tamanoVentas = tamano;
+        var total = Math.Max(1, (int)Math.Ceiling(_ventas.Count / (double)_tamanoVentas));
+        if (_paginaVentasActual > total) _paginaVentasActual = total;
+    }
+
+    private void CambiarTamanoCompras(int tamano)
+    {
+        _tamanoCompras = tamano;
+        var total = Math.Max(1, (int)Math.Ceiling(_compras.Count / (double)_tamanoCompras));
+        if (_paginaComprasActual > total) _paginaComprasActual = total;
+    }
+
+    private void VerDocumento(int id, bool esCompra) => _documentoAbierto = (id, esCompra);
+}
