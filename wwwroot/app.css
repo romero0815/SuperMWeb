@@ -893,3 +893,8 @@ a.btn { text-decoration: none; display: inline-block; line-height: normal; }
     color: #90a4ae;
     cursor: not-allowed;
 }
+
+/* Campo de contrasena con boton de ver/ocultar */
+.campo-clave { display: flex; gap: 0.4rem; align-items: stretch; }
+.campo-clave input { flex: 1; min-width: 0; }
+.campo-clave button { white-space: nowrap; }

@@ -1,0 +1,284 @@
+@page "/proveedores"
+@attribute [Authorize(Roles = "SuperAdmin")]
+@rendermode InteractiveServer
+@using SuperMWeb.Application
+@using SuperMWeb.Components.Dialogs
+@using SuperMWeb.Domain
+@inject IProveedoresRepository ProveedoresRepo
+
+@* Equivalente de ProveedoresForm del desktop. Igual que alli, el proveedor
+   centinela "Ninguno" no se lista: existe solo como valor por defecto de los
+   productos y no debe editarse ni borrarse. *@
+
+<PageTitle>Proveedores - SuperM</PageTitle>
+
+<div class="pagina">
+
+    <div class="pagina-header">
+        <h1>Proveedores</h1>
+        <div class="acciones">
+            <button class="btn btn-exito" @onclick="AbrirNuevo">Nuevo proveedor</button>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="feedback @_feedback.Tipo">@_feedback.Mensaje</div>
+    }
+
+    <section class="panel">
+        <div class="tabla-scroll">
+            <table class="tabla">
+                <thead>
+                    <tr>
+                        <th class="numero">#</th>
+                        <th>Nombre</th>
+                        <th>Telefono</th>
+                        <th>Direccion</th>
+                        <th>Correo</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_cargando)
+                    {
+                        <tr><td colspan="6" class="vacio-fila">Cargando...</td></tr>
+                    }
+                    else if (_proveedores.Count == 0)
+                    {
+                        <tr><td colspan="6" class="vacio-fila">Todavia no hay proveedores registrados.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var p in _proveedores)
+                        {
+                            <tr>
+                                <td class="numero">@p.IdProveedor</td>
+                                <td>@p.Nombre</td>
+                                <td>@p.Telefono</td>
+                                <td>@p.Direccion</td>
+                                <td>@p.Correo</td>
+                                <td class="acciones-fila">
+                                    <button class="btn btn-primario btn-mini" @onclick="() => AbrirEdicion(p)">Editar</button>
+                                    <button class="btn btn-peligro btn-mini" @onclick="() => _bajaPendiente = p">Eliminar</button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@if (_mostrarFormulario)
+{
+    <div class="modal-backdrop" @onclick="Cerrar">
+        <div class="modal modal-form" @onclick:stopPropagation="true" @onkeydown="OnKey" tabindex="0">
+            <h2>@(_idEnEdicion > 0 ? "Actualizar proveedor" : "Agregar proveedor")</h2>
+
+            @if (_errorFormulario is not null)
+            {
+                <div class="feedback error">@_errorFormulario</div>
+            }
+
+            <div class="form-rejilla">
+                <div class="campo-form ancho-total">
+                    <label for="prNombre">Nombre *</label>
+                    <input id="prNombre" @bind="_nombre" @bind:event="oninput" autocomplete="off" />
+                </div>
+                <div class="campo-form">
+                    <label for="prTel">Telefono</label>
+                    <input id="prTel" inputmode="numeric" maxlength="10" @bind="_telefono" @bind:event="oninput" autocomplete="off" />
+                </div>
+                <div class="campo-form">
+                    <label for="prCorreo">Correo</label>
+                    <input id="prCorreo" type="email" @bind="_correo" @bind:event="oninput" autocomplete="off" />
+                </div>
+                <div class="campo-form ancho-total">
+                    <label for="prDir">Direccion</label>
+                    <input id="prDir" @bind="_direccion" @bind:event="oninput" autocomplete="off" />
+                </div>
+            </div>
+
+            <div class="acciones">
+                <button class="btn-secondary" @onclick="Cerrar">Cancelar (Esc)</button>
+                <button class="btn-primary" disabled="@_guardando" @onclick="Guardar">
+                    @(_guardando ? "Guardando..." : _idEnEdicion > 0 ? "Actualizar" : "Guardar")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_bajaPendiente is not null)
+{
+    <ConfirmDialog Titulo="Eliminar proveedor"
+                   Mensaje="@($"Deseas eliminar a \"{_bajaPendiente.Nombre}\"? Los productos que lo tengan asignado lo conservaran.")"
+                   Peligro="true"
+                   OnAceptar="ConfirmarBaja"
+                   OnCancelar="() => _bajaPendiente = null" />
+}
+
+@code {
+    private IReadOnlyList<Proveedor> _proveedores = Array.Empty<Proveedor>();
+    private bool _cargando = true;
+
+    private bool _mostrarFormulario;
+    private int _idEnEdicion;
+    private string _nombre = string.Empty;
+    private string _telefono = string.Empty;
+    private string _direccion = string.Empty;
+    private string _correo = string.Empty;
+    private bool _guardando;
+    private string? _errorFormulario;
+
+    private Proveedor? _bajaPendiente;
+
+    private FeedbackMsg? _feedback;
+    private CancellationTokenSource? _feedbackCts;
+
+    protected override Task OnInitializedAsync() => Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        try
+        {
+            var todos = await ProveedoresRepo.ListarActivosAsync();
+
+            // El desktop filtra el centinela "Ninguno" del listado.
+            _proveedores = todos
+                .Where(p => !string.Equals(p.Nombre, "Ninguno", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudieron cargar los proveedores: {ex.Message}");
+            _proveedores = Array.Empty<Proveedor>();
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void AbrirNuevo()
+    {
+        _idEnEdicion = 0;
+        _nombre = _telefono = _direccion = _correo = string.Empty;
+        _errorFormulario = null;
+        _mostrarFormulario = true;
+    }
+
+    private void AbrirEdicion(Proveedor p)
+    {
+        _idEnEdicion = p.IdProveedor;
+        _nombre = p.Nombre;
+        _telefono = p.Telefono ?? string.Empty;
+        _direccion = p.Direccion ?? string.Empty;
+        _correo = p.Correo ?? string.Empty;
+        _errorFormulario = null;
+        _mostrarFormulario = true;
+    }
+
+    private void Cerrar() => _mostrarFormulario = false;
+
+    private async Task Guardar()
+    {
+        _errorFormulario = Validar();
+        if (_errorFormulario is not null) return;
+
+        _guardando = true;
+        try
+        {
+            var proveedor = new Proveedor
+            {
+                IdProveedor = _idEnEdicion,
+                Nombre = _nombre.Trim(),
+                Telefono = _telefono.Trim(),
+                Direccion = _direccion.Trim(),
+                Correo = _correo.Trim()
+            };
+
+            var eraEdicion = _idEnEdicion > 0;
+            if (eraEdicion) await ProveedoresRepo.ActualizarAsync(proveedor);
+            else await ProveedoresRepo.CrearAsync(proveedor);
+
+            _mostrarFormulario = false;
+            await Cargar();
+            await MostrarFeedback("exito",
+                eraEdicion ? "Proveedor actualizado correctamente." : "Proveedor creado correctamente.");
+        }
+        catch (Exception ex)
+        {
+            _errorFormulario = $"No se pudo guardar el proveedor: {ex.Message}";
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    // Mismas reglas que ProveedoresForm.aplicarValidaciones.
+    private string? Validar()
+    {
+        var nombre = _nombre.Trim();
+        var telefono = _telefono.Trim();
+        var correo = _correo.Trim();
+
+        if (nombre.Length == 0) return "El campo nombre es obligatorio.";
+        if (telefono.Length > 10) return "El campo telefono solo debe tener 10 digitos.";
+        if (correo.Length > 0 && !FormatosTexto.ValidEmail(correo))
+            return "El campo correo es invalido, digite un correo valido.";
+
+        return null;
+    }
+
+    private async Task ConfirmarBaja()
+    {
+        var p = _bajaPendiente;
+        _bajaPendiente = null;
+        if (p is null) return;
+
+        try
+        {
+            await ProveedoresRepo.DesactivarAsync(p.IdProveedor);
+            await Cargar();
+            await MostrarFeedback("exito", "Proveedor eliminado correctamente.");
+        }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo eliminar: {ex.Message}");
+        }
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Cerrar();
+        else if (e.Key == "Enter") await Guardar();
+    }
+
+    private async Task MostrarFeedback(string tipo, string mensaje)
+    {
+        _feedbackCts?.Cancel();
+        _feedbackCts = new CancellationTokenSource();
+        var token = _feedbackCts.Token;
+
+        _feedback = new FeedbackMsg(tipo, mensaje);
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+            if (!token.IsCancellationRequested)
+            {
+                _feedback = null;
+                StateHasChanged();
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private record FeedbackMsg(string Tipo, string Mensaje);
+}
