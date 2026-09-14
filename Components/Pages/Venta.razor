@@ -213,12 +213,62 @@
                     OnCancelar="() => _mostrarCantidad = false" />
 }
 
+@* Sin existencia suficiente: igual que VentasForm, se ofrece actualizar el
+   producto antes de rechazar el item. *@
+@if (_sinStock is not null)
+{
+    <ConfirmDialog Titulo="Sin stock"
+                   Mensaje="@($"No hay suficiente stock de \"{_sinStock.Nombre}\" (stock actual {_sinStock.Stock}). ¿Desea actualizarlo?")"
+                   OnAceptar="AbrirActualizarProducto"
+                   OnCancelar="RechazarActualizarProducto" />
+}
+
+@if (_idProductoAActualizar > 0)
+{
+    <ProductoDialog IdProducto="_idProductoAActualizar"
+                    OnGuardado="ProductoActualizado"
+                    OnCancelar="() => _idProductoAActualizar = 0" />
+}
+
+@* La venta ya quedo registrada; aqui solo se decide si sale el tiquete,
+   como el "¿Desea imprimir factura?" del escritorio. *@
+@if (_impresionPendiente is not null)
+{
+    <ConfirmDialog Titulo="Imprimir factura"
+                   Mensaje="¿Desea imprimir factura?"
+                   OnAceptar="ImprimirFacturaPendiente"
+                   OnCancelar="() => _impresionPendiente = null" />
+}
+
 @code {
     private int _seleccionada = -1;
     private bool _mostrarCobro;
     private bool _mostrarCantidad;
     private bool _mostrarFiar;
     private string? _usuario;
+
+    // Flujo de producto sin stock: primero la pregunta, luego el formulario.
+    private SinStock? _sinStock;
+    private int _idProductoAActualizar;
+
+    // Factura de la venta recien registrada, a la espera de que el cajero
+    // diga si la imprime.
+    private ImpresionPendiente? _impresionPendiente;
+
+    // Dialogo que tenia el foco en el ultimo render, para moverlo solo
+    // cuando cambia.
+    private string? _dialogoEnfocado;
+
+    private string? DialogoActual =>
+        _impresionPendiente is not null ? "impresion"
+        : _idProductoAActualizar > 0 ? "producto"
+        : _sinStock is not null ? "sinStock"
+        : _mostrarCobro ? "cobro"
+        : _mostrarFiar ? "fiar"
+        : _mostrarCantidad ? "cantidad"
+        : null;
+
+    private bool HayDialogoAbierto => DialogoActual is not null;
 
     // Catalogo de respaldo cuando no hay lector
     private IReadOnlyList<ProductoListado> _catalogo = Array.Empty<ProductoListado>();
@@ -299,14 +349,33 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (firstRender)
+        {
+            await State.RestaurarDesdeStorageAsync(JS);
 
-        await State.RestaurarDesdeStorageAsync(JS);
+            Scanner.OnEscaneo += OnEscaneo;
+            await Scanner.IniciarAsync();
 
-        Scanner.OnEscaneo += OnEscaneo;
-        await Scanner.IniciarAsync();
+            await Ui.EnfocarAsync(".venta-layout");
+            return;
+        }
 
-        await Ui.EnfocarAsync(".venta-layout");
+        var actual = DialogoActual;
+        if (actual == _dialogoEnfocado) return;
+        _dialogoEnfocado = actual;
+
+        // Las confirmaciones reciben el foco para responder con Enter/Esc; el
+        // formulario de producto va directo al stock; al cerrar todo vuelve
+        // a la pantalla para que sigan funcionando los atajos. Cantidad y
+        // fiado manejan su propio foco.
+        var selector = actual switch
+        {
+            null => ".venta-layout",
+            "producto" => "#pStock",
+            "cobro" or "sinStock" or "impresion" => ".modal",
+            _ => null
+        };
+        if (selector is not null) await Ui.EnfocarAsync(selector);
     }
 
     private async void OnVentaCambio()
@@ -320,7 +389,7 @@
 
     private async void OnEscaneo(string codigo)
     {
-        if (_mostrarCobro || _mostrarCantidad || _mostrarFiar) return;
+        if (HayDialogoAbierto) return;
         await InvokeAsync(async () => await ProcesarEscaneoAsync(codigo));
     }
 
@@ -371,7 +440,8 @@
 
         if (stockActual < cantidadEnVenta + 1)
         {
-            await MostrarFeedback("error", $"Sin stock: {nombre} (stock actual {stockActual}).");
+            // Como VentasForm: antes de rechazar se ofrece actualizar el producto.
+            _sinStock = new SinStock(idProducto, nombre, stockActual);
             await Ui.BeepAsync(220, 250);
             return;
         }
@@ -413,7 +483,7 @@
 
     private async Task OnKeyDown(KeyboardEventArgs e)
     {
-        if (_mostrarCobro || _mostrarCantidad || _mostrarFiar) return;
+        if (HayDialogoAbierto) return;
 
         switch (e.Key)
         {
@@ -494,25 +564,12 @@
             return;
         }
 
-        try
-        {
-            var nombreNegocio = Config["Negocio:Nombre"] ?? "";
-            var bytes = TicketBuilder.ConstruirFactura(items, total, nombreNegocio);
-            var res = await Printer.ImprimirAsync(bytes);
-            if (!res.Exitoso)
-            {
-                await MostrarFeedback("error", $"Venta registrada pero fallo la impresion: {res.MensajeError}");
-                await Ui.BeepAsync(220, 250);
-            }
-        }
-        catch (Exception ex)
-        {
-            await MostrarFeedback("error", $"Venta registrada. Error al imprimir: {ex.Message}");
-            await Ui.BeepAsync(220, 250);
-        }
-
         var cambio = VentaCalculadora.CalcularCambio(recibido, total);
         await ReiniciarVentaAsync();
+
+        // Se pregunta antes del aviso: MostrarFeedback espera a que el mensaje
+        // se oculte, y la confirmacion debe verse de inmediato.
+        _impresionPendiente = new ImpresionPendiente(items, total);
         await MostrarFeedback("exito", recibido > 0
             ? $"Venta registrada. Cambio: {cambio.ToString("C0")}"
             : "Venta registrada.");
@@ -539,27 +596,62 @@
             return;
         }
 
+        await ReiniciarVentaAsync();
+        _impresionPendiente = new ImpresionPendiente(items, total);
+        await MostrarFeedback("exito",
+            $"Venta fiada a {fiado.NombreCliente} por {fiado.Valor.ToString("C0")}.");
+    }
+
+    // Solo imprime: la venta ya esta registrada, un fallo aqui no la deshace.
+    private async Task ImprimirFacturaPendiente()
+    {
+        var pendiente = _impresionPendiente;
+        _impresionPendiente = null;
+        if (pendiente is null) return;
+
         try
         {
             var nombreNegocio = Config["Negocio:Nombre"] ?? "";
-            var bytes = TicketBuilder.ConstruirFactura(items, total, nombreNegocio);
+            var bytes = TicketBuilder.ConstruirFactura(pendiente.Items, pendiente.Total, nombreNegocio);
             var res = await Printer.ImprimirAsync(bytes);
             if (!res.Exitoso)
             {
-                await MostrarFeedback("error", $"Venta fiada registrada pero fallo la impresion: {res.MensajeError}");
                 await Ui.BeepAsync(220, 250);
+                await MostrarFeedback("error", $"La venta quedo registrada pero fallo la impresion: {res.MensajeError}");
             }
         }
         catch (Exception ex)
         {
-            await MostrarFeedback("error", $"Venta fiada registrada. Error al imprimir: {ex.Message}");
             await Ui.BeepAsync(220, 250);
+            await MostrarFeedback("error", $"La venta quedo registrada. Error al imprimir: {ex.Message}");
         }
-
-        await ReiniciarVentaAsync();
-        await MostrarFeedback("exito",
-            $"Venta fiada a {fiado.NombreCliente} por {fiado.Valor.ToString("C0")}.");
     }
+
+    private void AbrirActualizarProducto()
+    {
+        _idProductoAActualizar = _sinStock?.IdProducto ?? 0;
+        _sinStock = null;
+    }
+
+    private async Task RechazarActualizarProducto()
+    {
+        var nombre = _sinStock?.Nombre;
+        _sinStock = null;
+        await MostrarFeedback("error", $"No hay suficiente stock de {nombre}.");
+    }
+
+    // Igual que el escritorio, el producto no se agrega solo: tras actualizar
+    // se refresca el catalogo y el cajero lo vuelve a escanear o agregar.
+    private async Task ProductoActualizado(ProductoDialog.Resultado r)
+    {
+        _idProductoAActualizar = 0;
+        await CargarCatalogo();
+        await MostrarFeedback("exito", $"Producto actualizado (stock {r.Cantidad}). Vuelve a agregarlo a la venta.");
+    }
+
+    private record SinStock(int IdProducto, string Nombre, int Stock);
+
+    private record ImpresionPendiente(IReadOnlyList<LineaTicket> Items, decimal Total);
 
     private async Task MostrarFeedback(string tipo, string mensaje)
     {
