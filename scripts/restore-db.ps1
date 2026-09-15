@@ -2,18 +2,24 @@
 #
 # Restaura la base SuperM desde un .bak.
 #
-# ADVERTENCIA: sobrescribe la base actual. Detener el servicio SuperMWeb
-# antes de ejecutar. El script lo verifica y detiene automaticamente.
+# ADVERTENCIA: sobrescribe la base actual, que tambien usa la app de
+# escritorio. Detener el servicio SuperMWeb antes de ejecutar (el script lo
+# verifica y lo detiene automaticamente) y cerrar el escritorio.
+#
+# Este script NO hace copia del final del registro (tail-log). Restaurar desde
+# SSMS con "Realizar copia del final del registro antes de restaurar" marcado
+# deja la base de origen en RESTORING, inutilizable para las dos apps.
 #
 # Uso:
 #   ./scripts/restore-db.ps1 -BakFile "C:\SuperM\backups\SuperM_20260902_120000.bak"
+#   ./scripts/restore-db.ps1 -BakFile "..." -Database "SuperM2"   # equipo de desarrollo
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
     [string]$BakFile,
     [string]$Server   = "localhost",
-    [string]$Database = "SuperM2",
+    [string]$Database = "SuperM",
     [string]$ServiceName = "SuperMWeb"
 )
 

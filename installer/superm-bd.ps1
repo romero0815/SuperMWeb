@@ -1,29 +1,35 @@
 ﻿# installer/superm-bd.ps1
 #
-# Ayudante del instalador de SuperMWeb para la base de datos. Usa
-# System.Data.SqlClient de .NET Framework, que viene con Windows 10: asi el
-# instalador no depende de sqlcmd ni de un proveedor OLE DB concreto.
+# Ayudante del instalador de SuperMWeb. Usa System.Data.SqlClient de .NET
+# Framework, que viene con Windows 10: asi el instalador no depende de sqlcmd
+# ni de un proveedor OLE DB concreto.
 #
-#   -Accion Probar    Conecta con seguridad integrada y verifica que la base
-#                     tenga el esquema de SuperM.
-#   -Accion Permisos  Da a la cuenta del servicio (NT AUTHORITY\SYSTEM) acceso
-#                     de lectura, escritura, ejecucion y backup en la base.
-#                     Corre con la cuenta del administrador que instala, que
-#                     debe poder crear logins y usuarios en SQL Server.
+#   -Accion Probar        Conecta con seguridad integrada y verifica que la base
+#                         tenga el esquema de SuperM. Solo lectura.
+#   -Accion Permisos      Da a la cuenta del servicio (NT AUTHORITY\SYSTEM)
+#                         acceso de lectura, escritura, ejecucion y backup en la
+#                         base. Todo en UNA transaccion: si algo falla no queda
+#                         nada a medias. No toca tablas, datos ni procedimientos.
+#                         Corre con la cuenta del administrador que instala, que
+#                         debe poder crear logins y usuarios en SQL Server.
+#   -Accion TareasBackup  Lista las tareas programadas de backup que ya existen
+#                         en el equipo (por ejemplo la del escritorio) como
+#                         "Nombre|HH:mm", para no programar otra a la misma hora.
 #
 # El resultado se escribe en -ArchivoSalida (UTF-8) para que el instalador lo
 # muestre. Codigo de salida 0 = correcto.
 #
-# -Simular ejecuta Permisos dentro de una transaccion y la revierte: sirve para
+# -Simular ejecuta Permisos y revierte la transaccion al final: sirve para
 # comprobar el script contra una base real sin cambiar nada.
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)] [ValidateSet('Probar', 'Permisos')] [string]$Accion,
-    [Parameter(Mandatory)] [string]$Servidor,
-    [Parameter(Mandatory)] [string]$BaseDatos,
+    [Parameter(Mandatory)] [ValidateSet('Probar', 'Permisos', 'TareasBackup')] [string]$Accion,
+    [string]$Servidor = '',
+    [string]$BaseDatos = '',
     [string]$ArchivoSalida = '',
     [string]$Login = 'NT AUTHORITY\SYSTEM',
+    [string]$ExcluirTarea = '',
     [switch]$Simular
 )
 
@@ -35,6 +41,11 @@ function Escribir([string]$Texto) {
     else { Write-Output $Texto }
 }
 
+function MensajeInterno($Excepcion) {
+    while ($Excepcion.InnerException) { $Excepcion = $Excepcion.InnerException }
+    return $Excepcion.Message
+}
+
 function Escalar($Conexion, [string]$Sql, $Transaccion = $null, [hashtable]$Parametros = @{}) {
     $cmd = $Conexion.CreateCommand()
     $cmd.CommandText = $Sql
@@ -42,6 +53,37 @@ function Escalar($Conexion, [string]$Sql, $Transaccion = $null, [hashtable]$Para
     if ($Transaccion) { $cmd.Transaction = $Transaccion }
     foreach ($clave in $Parametros.Keys) { [void]$cmd.Parameters.AddWithValue($clave, $Parametros[$clave]) }
     return $cmd.ExecuteScalar()
+}
+
+# ---- Tareas de backup existentes (no usa la base) ----
+if ($Accion -eq 'TareasBackup') {
+    try {
+        $lineas = foreach ($tarea in Get-ScheduledTask) {
+            if ($tarea.TaskName -eq $ExcluirTarea -or $tarea.TaskPath -like '\Microsoft\*') { continue }
+
+            $acciones = ($tarea.Actions | ForEach-Object {
+                if ($_.PSObject.Properties['Execute']) { "$($_.Execute) $($_.Arguments)" }
+            }) -join ' '
+            if ($acciones -notmatch 'sqlcmd|backup|\.bak') { continue }
+
+            foreach ($disparador in $tarea.Triggers) {
+                if ($disparador.PSObject.Properties['StartBoundary'] -and $disparador.StartBoundary) {
+                    '{0}|{1}' -f $tarea.TaskName, ([datetime]$disparador.StartBoundary).ToString('HH:mm')
+                }
+            }
+        }
+        Escribir ((@($lineas) | Select-Object -Unique) -join "`r`n")
+        exit 0
+    }
+    catch {
+        Escribir (MensajeInterno $_.Exception)
+        exit 1
+    }
+}
+
+if (-not $Servidor -or -not $BaseDatos) {
+    Escribir 'Faltan el servidor o la base de datos.'
+    exit 1
 }
 
 try {
@@ -80,8 +122,11 @@ SELECT STUFF(
     # El servicio corre como LocalSystem, que en un SQL Server local entra como
     # NT AUTHORITY\SYSTEM. Desde SQL Server 2012 ese login ya no es sysadmin
     # por defecto y no tiene acceso a las bases de usuario.
+    # XACT_ABORT hace que cualquier error aborte y revierta la transaccion
+    # completa, tambien los errores dentro de EXEC (@sql).
     $sql = @'
 SET NOCOUNT ON;
+SET XACT_ABORT ON;
 DECLARE @usuario sysname, @mensaje nvarchar(500), @sql nvarchar(max);
 
 IF SUSER_ID(@login) IS NULL
@@ -121,22 +166,31 @@ END
 SELECT @mensaje;
 '@
 
-    $transaccion = $null
-    if ($Simular) { $transaccion = $conexion.BeginTransaction() }
-
-    $mensaje = Escalar $conexion $sql $transaccion @{ '@login' = $Login }
-
-    if ($Simular) {
-        $transaccion.Rollback()
-        $mensaje = "[SIMULACIÓN, cambios revertidos] $mensaje"
+    # Todo en una transaccion: o se aplica completo o no queda nada (por
+    # ejemplo, un login creado sin sus roles). Con -Simular se revierte siempre.
+    $transaccion = $conexion.BeginTransaction()
+    try {
+        $mensaje = Escalar $conexion $sql $transaccion @{ '@login' = $Login }
+        if ($Simular) {
+            $transaccion.Rollback()
+            $mensaje = "[SIMULACIÓN, cambios revertidos] $mensaje"
+        }
+        else {
+            $transaccion.Commit()
+        }
+    }
+    catch {
+        $detalle = MensajeInterno $_.Exception
+        # XACT_ABORT pudo haberla revertido ya en el servidor.
+        try { $transaccion.Rollback() } catch { }
+        Escribir "No se aplicó ningún cambio de permisos.`r`n$detalle"
+        exit 1
     }
 
     Escribir $mensaje
     exit 0
 }
 catch {
-    $ex = $_.Exception
-    while ($ex.InnerException) { $ex = $ex.InnerException }
-    Escribir $ex.Message
+    Escribir (MensajeInterno $_.Exception)
     exit 1
 }

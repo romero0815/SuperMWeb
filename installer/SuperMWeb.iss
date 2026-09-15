@@ -5,13 +5,20 @@
 ;   - Copia la publicacion self-contained (no requiere .NET en la caja).
 ;   - Genera appsettings.Production.json con la base, el puerto, el nombre del
 ;     negocio y la impresora (solo en la primera instalacion).
-;   - Opcional: da acceso a la base a la cuenta del servicio.
+;   - Opcional: da acceso a la base a la cuenta del servicio, en una sola
+;     transaccion (o se aplica todo o nada).
 ;   - Registra el servicio de Windows SuperMWeb con reinicio ante fallo y lo
 ;     inicia, esperando a que /health responda.
-;   - Opcional: backup diario, accesos directos de Chrome y energia.
+;   - Opcional: backup diario adicional, accesos directos de Chrome y energia.
+;
+; No crea, modifica ni borra tablas, datos, procedimientos ni triggers, y no
+; toca tareas de backup existentes (la caja ya tiene la del escritorio).
 ;
 ; No compilar a mano: usar installer/build-installer.ps1, que publica primero
 ; y le pasa a ISCC las rutas y la version.
+;
+; Ojo en [Code]: ninguna linea puede empezar con #13#10 (ISPP la toma como
+; directiva del preprocesador).
 
 #ifndef AppVersion
   #define AppVersion "1.0.0"
@@ -60,7 +67,7 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "permisosbd"; Description: "Dar acceso a la base de datos a la cuenta del servicio (NT AUTHORITY\SYSTEM)"; GroupDescription: "Base de datos:"
-Name: "backup"; Description: "Programar backup diario de la base a las 3:00 a.m. (requiere sqlcmd)"; GroupDescription: "Base de datos:"
+Name: "backup"; Description: "Programar un backup diario adicional, con hora configurable (requiere sqlcmd)"; GroupDescription: "Base de datos:"; Flags: unchecked
 Name: "escritorio"; Description: "Acceso directo en el escritorio"; GroupDescription: "Accesos directos:"
 Name: "kiosco"; Description: "Abrir SuperM en Chrome modo kiosco al iniciar sesión (todos los usuarios)"; GroupDescription: "Accesos directos:"; Flags: unchecked
 Name: "energia"; Description: "Evitar que el equipo se suspenda o apague la pantalla"; GroupDescription: "Equipo:"; Flags: unchecked
@@ -69,6 +76,7 @@ Name: "energia"; Description: "Evitar que el equipo se suspenda o apague la pant
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "appsettings.Development.json,\logs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\scripts\backup-db.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "..\scripts\restore-db.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
+Source: "..\scripts\programar-backup.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "superm-bd.ps1"; Flags: dontcopy
 
 [Dirs]
@@ -99,10 +107,15 @@ const
   NombreServicio = '{#ServiceName}';
   NombreTareaBackup = 'SuperM Backup Diario';
   ArchivoConfig = 'appsettings.Production.json';
+  HoraBackupPorDefecto = '03:00';
 
 var
   PaginaBD: TInputQueryWizardPage;
   PaginaCaja: TInputQueryWizardPage;
+  PaginaBackup: TInputQueryWizardPage;
+  EtiquetaBackups: TNewStaticText;
+  TareasBackup: TArrayOfString;
+  TareasBackupLeidas: Boolean;
   ConfigExistia: Boolean;
 
 { ---------- Utilidades ---------- }
@@ -115,12 +128,36 @@ begin
     Result := Codigo
   else
     Result := -1;
-  Log(Format('Exec %s %s -> %d', [Archivo, Parametros, Result]));
+  Log('Exec ' + Archivo + ' ' + Parametros + ' -> ' + IntToStr(Result));
 end;
 
 function Sistema(const Archivo: String): String;
 begin
   Result := ExpandConstant('{sys}\') + Archivo;
+end;
+
+{ Ejecuta un .ps1 oculto. El script escribe su resultado en un archivo UTF-8
+  que se devuelve linea por linea. }
+function EjecutarScript(const Script, Argumentos: String; var Lineas: TArrayOfString): Integer;
+var
+  Salida: String;
+begin
+  Salida := ExpandConstant('{tmp}\superm-salida.txt');
+  DeleteFile(Salida);
+  Result := EjecutarOculto(Sistema('WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" ' + Argumentos + ' -ArchivoSalida "' + Salida + '"');
+  if not LoadStringsFromFile(Salida, Lineas) then
+    SetArrayLength(Lineas, 0);
+end;
+
+function UnirLineas(const Lineas: TArrayOfString): String;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to GetArrayLength(Lineas) - 1 do
+    Result := Result + Lineas[I] + #13#10;
+  Result := Trim(Result);
 end;
 
 function EscaparJson(Valor: String): String;
@@ -142,6 +179,22 @@ begin
   P := Pos(Fin, Resto);
   if P = 0 then Exit;
   Result := Copy(Resto, 1, P - 1);
+end;
+
+function HoraValida(const Hora: String): Boolean;
+var
+  HH, MM: Integer;
+begin
+  Result := (Length(Hora) = 5) and (Hora[3] = ':');
+  if not Result then Exit;
+  HH := StrToIntDef(Copy(Hora, 1, 2), -1);
+  MM := StrToIntDef(Copy(Hora, 4, 2), -1);
+  Result := (HH >= 0) and (HH <= 23) and (MM >= 0) and (MM <= 59);
+end;
+
+function MinutosDelDia(const Hora: String): Integer;
+begin
+  Result := StrToIntDef(Copy(Hora, 1, 2), 0) * 60 + StrToIntDef(Copy(Hora, 4, 2), 0);
 end;
 
 { ---------- Valores de configuracion ---------- }
@@ -172,6 +225,11 @@ end;
 function NombreImpresora: String;
 begin
   Result := Trim(PaginaCaja.Values[2]);
+end;
+
+function HoraBackup: String;
+begin
+  Result := Trim(PaginaBackup.Values[0]);
 end;
 
 function UrlApp(Param: String): String;
@@ -259,31 +317,16 @@ end;
 
 function EjecutarBD(const Accion: String; var Mensaje: String): Boolean;
 var
-  Script, Salida, Parametros: String;
   Lineas: TArrayOfString;
-  Codigo, I: Integer;
+  Codigo: Integer;
 begin
   ExtractTemporaryFile('superm-bd.ps1');
-  Script := ExpandConstant('{tmp}\superm-bd.ps1');
-  Salida := ExpandConstant('{tmp}\superm-bd-salida.txt');
-  DeleteFile(Salida);
-
-  Parametros := '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '"' +
-                ' -Accion ' + Accion +
-                ' -Servidor "' + Servidor + '"' +
-                ' -BaseDatos "' + BaseDatos + '"' +
-                ' -ArchivoSalida "' + Salida + '"';
-  Codigo := EjecutarOculto(Sistema('WindowsPowerShell\v1.0\powershell.exe'), Parametros);
-
-  Mensaje := '';
-  if LoadStringsFromFile(Salida, Lineas) then
-    for I := 0 to GetArrayLength(Lineas) - 1 do
-      Mensaje := Mensaje + Lineas[I] + #13#10;
-  Mensaje := Trim(Mensaje);
+  Codigo := EjecutarScript(ExpandConstant('{tmp}\superm-bd.ps1'),
+    '-Accion ' + Accion + ' -Servidor "' + Servidor + '" -BaseDatos "' + BaseDatos + '"', Lineas);
+  Mensaje := UnirLineas(Lineas);
   if Mensaje = '' then
     Mensaje := 'PowerShell terminó con código ' + IntToStr(Codigo) + '.';
   Log('superm-bd.ps1 ' + Accion + ': ' + Mensaje);
-
   Result := Codigo = 0;
 end;
 
@@ -300,6 +343,65 @@ begin
   finally
     WizardForm.NextButton.Enabled := True;
   end;
+end;
+
+{ ---------- Backups ya programados ---------- }
+
+{ Tareas de backup que ya existen en el equipo (por ejemplo la del escritorio),
+  como lineas "Nombre|HH:mm". Se leen una sola vez. }
+procedure LeerTareasBackup;
+begin
+  if TareasBackupLeidas then Exit;
+  TareasBackupLeidas := True;
+  ExtractTemporaryFile('superm-bd.ps1');
+  if EjecutarScript(ExpandConstant('{tmp}\superm-bd.ps1'),
+       '-Accion TareasBackup -ExcluirTarea "' + NombreTareaBackup + '"', TareasBackup) <> 0 then
+    SetArrayLength(TareasBackup, 0);
+end;
+
+{ Backups existentes a menos de una hora de la hora indicada. }
+function TareasCercanas(const Hora: String): String;
+var
+  I, P, Diferencia: Integer;
+  HoraTarea: String;
+begin
+  Result := '';
+  LeerTareasBackup;
+  for I := 0 to GetArrayLength(TareasBackup) - 1 do
+  begin
+    P := Pos('|', TareasBackup[I]);
+    if P = 0 then Continue;
+    HoraTarea := Copy(TareasBackup[I], P + 1, 5);
+    if not HoraValida(HoraTarea) then Continue;
+    { Abs devuelve Extended en Pascal Script: el valor absoluto va a mano. }
+    Diferencia := MinutosDelDia(Hora) - MinutosDelDia(HoraTarea);
+    if Diferencia < 0 then Diferencia := -Diferencia;
+    if Diferencia > 720 then Diferencia := 1440 - Diferencia;
+    if Diferencia < 60 then
+      Result := Result + '  - ' + Copy(TareasBackup[I], 1, P - 1) + ' a las ' + HoraTarea + #13#10;
+  end;
+  Result := Trim(Result);
+end;
+
+procedure MostrarTareasBackup;
+var
+  I, P: Integer;
+  Texto: String;
+begin
+  LeerTareasBackup;
+  Texto := '';
+  for I := 0 to GetArrayLength(TareasBackup) - 1 do
+  begin
+    P := Pos('|', TareasBackup[I]);
+    if P > 0 then
+      Texto := Texto + '  - ' + Copy(TareasBackup[I], 1, P - 1) + ' a las ' + Copy(TareasBackup[I], P + 1, 5) + #13#10;
+  end;
+
+  if Texto = '' then
+    EtiquetaBackups.Caption := 'No se encontraron otras tareas de backup programadas en este equipo.'
+  else
+    EtiquetaBackups.Caption := 'Backups ya programados en este equipo (no se modifican):' + #13#10 + Texto + #13#10 +
+      'Elija una hora distinta: dos backups de la misma base al mismo tiempo hacen fallar uno de ellos.';
 end;
 
 { ---------- Servicio de Windows ---------- }
@@ -415,33 +517,17 @@ end;
 
 procedure ProgramarBackup;
 var
-  Dir, Instancia, Accion: String;
+  Lineas: TArrayOfString;
+  Codigo: Integer;
+  Mensaje: String;
 begin
-  if EjecutarOculto(ExpandConstant('{cmd}'), '/C where sqlcmd') <> 0 then
-  begin
-    SuppressibleMsgBox('No se programó el backup diario: sqlcmd no está instalado o no está en el PATH.' + #13#10 +
-      'Instale "SQL Server Command Line Utilities" y vuelva a ejecutar el instalador.',
-      mbInformation, MB_OK, IDOK);
-    Exit;
-  end;
-
-  Dir := DirBackups;
-  ForceDirectories(Dir);
-
-  { El .bak lo escribe SQL Server con su propia cuenta de servicio. }
-  if Pos('\', Servidor) > 0 then
-    Instancia := 'MSSQL$' + Copy(Servidor, Pos('\', Servidor) + 1, MaxInt)
-  else
-    Instancia := 'MSSQLSERVER';
-  EjecutarOculto(Sistema('icacls.exe'), '"' + Dir + '" /grant "NT SERVICE\' + Instancia + ':(OI)(CI)M"');
-
-  Accion := 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"' +
-            ExpandConstant('{app}\scripts\backup-db.ps1') + '\"' +
-            ' -Server \"' + Servidor + '\" -Database \"' + BaseDatos + '\" -BackupDir \"' + Dir + '\"';
-
-  if EjecutarOculto(Sistema('schtasks.exe'), '/Create /F /TN "' + NombreTareaBackup +
-       '" /SC DAILY /ST 03:00 /RU SYSTEM /RL HIGHEST /TR "' + Accion + '"') <> 0 then
-    SuppressibleMsgBox('No se pudo programar la tarea "' + NombreTareaBackup + '".', mbError, MB_OK, IDOK);
+  Codigo := EjecutarScript(ExpandConstant('{app}\scripts\programar-backup.ps1'),
+    '-Hora ' + HoraBackup + ' -Server "' + Servidor + '" -Database "' + BaseDatos + '"' +
+    ' -BackupDir "' + DirBackups + '" -NombreTarea "' + NombreTareaBackup + '"', Lineas);
+  Mensaje := UnirLineas(Lineas);
+  Log('programar-backup.ps1: ' + Mensaje);
+  if Codigo <> 0 then
+    SuppressibleMsgBox('No se programó el backup diario adicional:' + #13#10#13#10 + Mensaje, mbError, MB_OK, IDOK);
 end;
 
 procedure ConfigurarEnergia;
@@ -461,11 +547,11 @@ begin
     'Base de datos',
     'Servidor SQL Server y base que usa la caja.',
     'La aplicación se conecta con la seguridad integrada de Windows, sin usuario ni contraseña. ' +
-    'Es la misma base que usa el sistema de escritorio.');
+    'Es la misma base que usa el sistema de escritorio. Use "Probar conexión" antes de continuar.');
   PaginaBD.Add('Servidor SQL Server (ej. localhost o localhost\SQLEXPRESS):', False);
   PaginaBD.Add('Base de datos:', False);
   PaginaBD.Values[0] := 'localhost';
-  PaginaBD.Values[1] := 'SuperM2';
+  PaginaBD.Values[1] := 'SuperM';
 
   Boton := TNewButton.Create(PaginaBD);
   Boton.Parent := PaginaBD.Surface;
@@ -486,22 +572,55 @@ begin
   PaginaCaja.Values[0] := '5000';
   PaginaCaja.Values[1] := 'Minimarket el Cairo';
   PaginaCaja.Values[2] := 'POS';
+
+  PaginaBackup := CreateInputQueryPage(wpSelectTasks,
+    'Backup diario adicional',
+    'Hora del backup de la base.',
+    'Corre como SYSTEM, sin necesidad de sesión abierta; si el equipo está apagado a esa hora, ' +
+    'se hace apenas encienda. Guarda 30 días de archivos y usa COPY_ONLY, así que no altera otros backups.');
+  PaginaBackup.Add('Hora (formato 24 horas, HH:MM):', False);
+  PaginaBackup.Values[0] := GetPreviousData('HoraBackup', HoraBackupPorDefecto);
+
+  EtiquetaBackups := TNewStaticText.Create(PaginaBackup);
+  EtiquetaBackups.Parent := PaginaBackup.Surface;
+  EtiquetaBackups.AutoSize := False;
+  EtiquetaBackups.WordWrap := True;
+  EtiquetaBackups.Left := 0;
+  EtiquetaBackups.Top := PaginaBackup.Edits[0].Top + PaginaBackup.Edits[0].Height + ScaleY(16);
+  EtiquetaBackups.Width := PaginaBackup.SurfaceWidth;
+  EtiquetaBackups.Height := ScaleY(120);
+  EtiquetaBackups.Caption := '';
+end;
+
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  SetPreviousData(PreviousDataKey, 'HoraBackup', HoraBackup);
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := False;
   if (PageID = PaginaBD.ID) or (PageID = PaginaCaja.ID) then
+  begin
     if FileExists(RutaConfig) then
     begin
       CargarConfigExistente;
       Result := True;
     end;
+  end
+  else if PageID = PaginaBackup.ID then
+    Result := not WizardIsTaskSelected('backup');
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = PaginaBackup.ID then
+    MostrarTareasBackup;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
-  Mensaje: String;
+  Mensaje, Cercanas: String;
   N: Integer;
 begin
   Result := True;
@@ -536,6 +655,21 @@ begin
       MsgBox('Indique parte del nombre de la impresora (por ejemplo POS).', mbError, MB_OK);
       Result := False;
     end;
+  end
+  else if CurPageID = PaginaBackup.ID then
+  begin
+    if not HoraValida(HoraBackup) then
+    begin
+      MsgBox('Escriba la hora en formato 24 horas HH:MM, por ejemplo 03:00 o 13:30.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+    Cercanas := TareasCercanas(HoraBackup);
+    if Cercanas <> '' then
+      Result := MsgBox('La hora elegida queda a menos de una hora de este backup existente:' + #13#10#13#10 +
+                       Cercanas + #13#10#13#10 +
+                       'Si coinciden, uno de los dos falla. ¿Usar esta hora de todos modos?',
+                       mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   end;
 end;
 
@@ -555,6 +689,10 @@ begin
       Space + 'Impresora: ' + NombreImpresora;
   if MemoTasksInfo <> '' then
     Result := Result + NewLine + NewLine + MemoTasksInfo;
+  if WizardIsTaskSelected('backup') then
+    Result := Result + NewLine + NewLine + 'Backup diario adicional:' + NewLine +
+      Space + 'Hora: ' + HoraBackup + ' (o al encender el equipo si estaba apagado)' + NewLine +
+      Space + 'Carpeta: ' + DirBackups;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -578,7 +716,6 @@ begin
   begin
     WizardForm.StatusLabel.Caption := 'Dando acceso a la base de datos a la cuenta del servicio...';
     if not EjecutarBD('Permisos', Mensaje) then
-      { Ninguna linea puede empezar con #13#10: ISPP la tomaria como directiva. }
       SuppressibleMsgBox('No se pudieron otorgar los permisos en la base de datos:' + #13#10#13#10 + Mensaje + #13#10#13#10 +
         'Ejecute el instalador con un usuario administrador de SQL Server, ' +
         'o dé los permisos a mano (ver despliegue.md, sección 7).', mbError, MB_OK, IDOK);
@@ -586,7 +723,7 @@ begin
 
   if WizardIsTaskSelected('backup') then
   begin
-    WizardForm.StatusLabel.Caption := 'Programando el backup diario...';
+    WizardForm.StatusLabel.Caption := 'Programando el backup diario adicional...';
     ProgramarBackup;
   end;
 
@@ -601,7 +738,8 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep <> usUninstall then Exit;
 
-  { Antes de borrar archivos: el servicio tiene abierto el ejecutable. }
+  { Antes de borrar archivos: el servicio tiene abierto el ejecutable. Solo se
+    borra la tarea de backup propia, nunca otras (como la del escritorio). }
   EjecutarOculto(Sistema('net.exe'), 'stop ' + NombreServicio);
   EjecutarOculto(Sistema('taskkill.exe'), '/F /IM {#ExeName}');
   EjecutarOculto(Sistema('sc.exe'), 'delete ' + NombreServicio);
