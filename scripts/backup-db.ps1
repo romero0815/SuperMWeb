@@ -34,10 +34,16 @@ if (-not $sqlcmd) {
     throw "sqlcmd no encontrado en PATH. Instala 'SQL Server Command Line Utilities' o Visual Studio 2022."
 }
 
+# SQL Server Express (EngineEdition 4) no admite COMPRESSION: ahi el backup
+# se hace sin comprimir en vez de fallar.
+$edicion = & sqlcmd -S $Server -E -b -h -1 -W -Q "SET NOCOUNT ON; SELECT SERVERPROPERTY('EngineEdition')"
+if ($LASTEXITCODE -ne 0) { throw "sqlcmd no pudo consultar la edicion de SQL Server (exit code $LASTEXITCODE)" }
+$compresion = if ((($edicion | Out-String).Trim()) -eq '4') { '' } else { 'COMPRESSION,' }
+
 $sql = @"
 BACKUP DATABASE [$Database]
 TO DISK = N'$bakFile'
-WITH FORMAT, INIT, COMPRESSION,
+WITH FORMAT, INIT, $compresion
      NAME = N'SuperM full backup $timestamp',
      STATS = 10;
 "@
