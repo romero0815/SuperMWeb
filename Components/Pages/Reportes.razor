@@ -5,12 +5,13 @@
 @using SuperMWeb.Components.Dialogs
 @inject IReportesRepository ReportesRepo
 @inject NavigationManager Nav
+@inject IConfiguration Config
 
 @* Equivalente de ReportesForm del desktop: tarjetas de inventario, grafico de
    los 10 mas vendidos del mes, stock minimo y los dos paneles (ventas y
    compras) que alternan entre vista diaria y rango de fechas. *@
 
-<PageTitle>Reportes - SuperM</PageTitle>
+<PageTitle>Reportes - @Config["Negocio:Nombre"]</PageTitle>
 
 <div class="pagina">
 

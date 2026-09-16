@@ -9,12 +9,13 @@
 @inject IProductosExcel Excel
 @inject ScannerService Scanner
 @inject IJSRuntime JS
+@inject IConfiguration Config
 
 @* Equivalente de ProductosForm del desktop: grilla de productos activos,
    busqueda por nombre y por codigo de barras, alta/edicion/baja logica,
    impresion de etiqueta de precio y carga masiva por Excel. *@
 
-<PageTitle>Productos - SuperM</PageTitle>
+<PageTitle>Productos - @Config["Negocio:Nombre"]</PageTitle>
 
 <div class="pagina">
 

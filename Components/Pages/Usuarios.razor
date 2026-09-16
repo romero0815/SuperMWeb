@@ -5,6 +5,7 @@
 @using SuperMWeb.Components.Dialogs
 @using SuperMWeb.Domain
 @inject IUsuariosRepository UsuariosRepo
+@inject IConfiguration Config
 
 @* Equivalente de UsuariosForm del desktop. Igual que alli, el rol SuperAdmin
    (IdRol 3) no se lista ni se puede asignar desde esta pantalla.
@@ -12,7 +13,7 @@
    La clave viaja y se guarda en texto plano, igual que el desktop: es la
    deuda tecnica R2 del inventario, no un descuido de la migracion. *@
 
-<PageTitle>Usuarios - SuperM</PageTitle>
+<PageTitle>Usuarios - @Config["Negocio:Nombre"]</PageTitle>
 
 <div class="pagina">
 

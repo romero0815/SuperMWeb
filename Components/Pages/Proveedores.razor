@@ -5,12 +5,13 @@
 @using SuperMWeb.Components.Dialogs
 @using SuperMWeb.Domain
 @inject IProveedoresRepository ProveedoresRepo
+@inject IConfiguration Config
 
 @* Equivalente de ProveedoresForm del desktop. Igual que alli, el proveedor
    centinela "Ninguno" no se lista: existe solo como valor por defecto de los
    productos y no debe editarse ni borrarse. *@
 
-<PageTitle>Proveedores - SuperM</PageTitle>
+<PageTitle>Proveedores - @Config["Negocio:Nombre"]</PageTitle>
 
 <div class="pagina">
 

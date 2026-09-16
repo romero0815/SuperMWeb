@@ -13,13 +13,14 @@
 @inject IComprasRepository ComprasRepo
 @inject ScannerService Scanner
 @inject AuthenticationStateProvider Auth
+@inject IConfiguration Config
 
 @* Equivalente de ComprasForm del desktop: se elige proveedor, se arma el
    detalle producto por producto con cantidad y precio unitario, y se registra
    con el SP RegistrarCompra. El stock sube por el trigger de
    MovimientosInventario, no desde aqui. *@
 
-<PageTitle>Compras - SuperM</PageTitle>
+<PageTitle>Compras - @Config["Negocio:Nombre"]</PageTitle>
 
 <div class="pagina">
 

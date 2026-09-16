@@ -5,12 +5,13 @@
 @using SuperMWeb.Components.Dialogs
 @inject IDeudoresRepository DeudoresRepo
 @inject NavigationManager Nav
+@inject IConfiguration Config
 
 @* Equivalente de DeudorMovimientoForm del desktop: estado de cuenta de un
    deudor con cargos, abonos y saldo. El saldo se calcula sobre todo el
    historico; los totales de cargos y abonos, solo sobre el rango filtrado. *@
 
-<PageTitle>Estado de cuenta - SuperM</PageTitle>
+<PageTitle>Estado de cuenta - @Config["Negocio:Nombre"]</PageTitle>
 
 <div class="pagina">
 

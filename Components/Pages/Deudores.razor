@@ -5,11 +5,12 @@
 @using SuperMWeb.Components.Dialogs
 @inject IDeudoresRepository DeudoresRepo
 @inject NavigationManager Nav
+@inject IConfiguration Config
 
 @* Equivalente de DeudoresForm del desktop: listado de clientes que deben,
    con el saldo calculado, busqueda y acciones por fila. *@
 
-<PageTitle>Deudores - SuperM</PageTitle>
+<PageTitle>Deudores - @Config["Negocio:Nombre"]</PageTitle>
 
 <div class="pagina">
 

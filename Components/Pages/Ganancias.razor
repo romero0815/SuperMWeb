@@ -4,13 +4,14 @@
 @using SuperMWeb.Application
 @inject IReportesRepository ReportesRepo
 @inject NavigationManager Nav
+@inject IConfiguration Config
 
 @* Equivalente de ReporteGananciasForm del desktop.
    OJO: la ganancia se calcula contra el PrecioCompra ACTUAL del producto, no
    contra el historico de cada venta. Es intencional (R8/R14 del inventario):
    RegistrarCompra sobrescribe PrecioCompra con el ultimo precio pagado. *@
 
-<PageTitle>Ganancias - SuperM</PageTitle>
+<PageTitle>Ganancias - @Config["Negocio:Nombre"]</PageTitle>
 
 <div class="pagina">
 
