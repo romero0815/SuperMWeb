@@ -1,0 +1,93 @@
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+
+<div class="modal-backdrop" @onclick="Cancelar" @onclick:stopPropagation="true">
+    <div class="modal modal-cobro" role="dialog" aria-labelledby="cobro-titulo" @onclick:stopPropagation="true" @onkeydown="OnKey">
+        <header class="cobro-header">
+            <span class="cobro-header-icono">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 10v4M18 10v4" /></svg>
+            </span>
+            <div>
+                <h2 id="cobro-titulo">Cobrar venta</h2>
+                <p>Verifique los valores antes de confirmar</p>
+            </div>
+            <button type="button" class="cobro-cerrar" aria-label="Cerrar" @onclick="Cancelar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>
+            </button>
+        </header>
+
+        <div class="cobro-total">
+            <span class="cobro-etiqueta">Total a cobrar</span>
+            <span class="cobro-total-valor">@Total.ToString("C0")</span>
+        </div>
+
+        <div class="cobro-fila">
+            <span class="cobro-etiqueta">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+                Dinero recibido
+            </span>
+            @if (DineroRecibido > 0)
+            {
+                <span class="cobro-fila-valor">@DineroRecibido.ToString("C0")</span>
+            }
+            else
+            {
+                <span class="cobro-fila-valor sin-dato">No digitado</span>
+            }
+        </div>
+
+        @if (Faltante > 0 && DineroRecibido > 0)
+        {
+            <div class="cobro-cambio faltante">
+                <span class="cobro-etiqueta">Faltan</span>
+                <span class="cobro-cambio-valor">@Faltante.ToString("C0")</span>
+            </div>
+        }
+        else
+        {
+            <div class="cobro-cambio @(DineroRecibido > 0 ? "" : "neutro")">
+                <span class="cobro-etiqueta">Cambio a entregar</span>
+                <span class="cobro-cambio-valor">@Cambio.ToString("C0")</span>
+            </div>
+        }
+
+        <div class="cobro-acciones">
+            <button class="cobro-btn-cancelar" @onclick="Cancelar">
+                Cancelar <kbd>Esc</kbd>
+            </button>
+            <button class="cobro-btn-confirmar" @onclick="Confirmar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                Confirmar <kbd>Enter</kbd>
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public decimal Total { get; set; }
+    [Parameter, EditorRequired] public decimal DineroRecibido { get; set; }
+    [Parameter, EditorRequired] public decimal Cambio { get; set; }
+    [Parameter] public EventCallback OnConfirmar { get; set; }
+    [Parameter] public EventCallback OnCancelar { get; set; }
+
+    private decimal Faltante => Math.Max(0m, Total - DineroRecibido);
+
+    private async Task Confirmar()
+    {
+        await OnConfirmar.InvokeAsync();
+    }
+
+    private Task Cancelar() => OnCancelar.InvokeAsync();
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await OnConfirmar.InvokeAsync();
+        }
+        else if (e.Key == "Escape")
+        {
+            await OnCancelar.InvokeAsync();
+        }
+    }
+}

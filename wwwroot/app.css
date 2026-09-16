@@ -455,19 +455,45 @@ h1:focus { outline: none; }
     padding: 1.15rem;
     font-size: 1.4rem;
     font-weight: 700;
-    background: #2e7d32;
     color: #fff;
     border: none;
     border-radius: 8px;
     cursor: pointer;
     letter-spacing: 0.05em;
     transition: background-color 120ms;
+    background: linear-gradient(135deg, #43a047, #2e7d32);
+    box-shadow: 0 8px 18px rgba(46, 125, 50, 0.3);
 }
 .venta-totales .btn-cobrar:hover { background: #1b5e20; }
 .venta-totales .btn-cobrar:disabled {
     background: #cfd8dc;
     color: #90a4ae;
     cursor: not-allowed;
+}
+.btn-cobrar kbd {
+    background: #7aab619e;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9rem;
+    margin-right: 0.35rem;
+}
+
+.btn-fiar kbd {
+    background: #dda84b75;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9rem;
+    margin-right: 0.35rem;
+}
+.btn-cancelar kbd {
+    background: #f567673d;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9rem;
+    margin-right: 0.35rem;
 }
 
 .venta-totales .btn-cancelar {
@@ -611,6 +637,167 @@ h1:focus { outline: none; }
 .modal .btn-primary:disabled { background: #cfd8dc; color: #90a4ae; cursor: not-allowed; }
 .modal .btn-secondary { background: #f4f5f7; color: #263238; border: 1px solid #cbd2d9; }
 .modal .btn-secondary:hover { background: #eceff1; }
+
+/* Modal de cobro */
+
+.modal.modal-cobro {
+    width: min(460px, 94vw);
+    min-width: 0;
+    padding: 0;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 30px 60px rgba(13, 30, 60, 0.35);
+    animation: cobro-entrada 180ms ease-out;
+}
+@keyframes cobro-entrada {
+    from { opacity: 0; transform: translateY(12px) scale(0.98); }
+    to   { opacity: 1; transform: none; }
+}
+
+.cobro-header {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 1.25rem 1.5rem;
+    color: #fff;
+    background: linear-gradient(135deg, #1976d2, #0d47a1);
+}
+.cobro-header-icono {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.16);
+}
+.cobro-header-icono svg { width: 26px; height: 26px; }
+.modal.modal-cobro h2 { margin: 0; color: #fff; font-size: 1.35rem; }
+.cobro-header p { margin: 0.1rem 0 0; font-size: 0.85rem; opacity: 0.8; }
+.cobro-cerrar {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    margin-left: auto;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #fff;
+    cursor: pointer;
+    opacity: 0.8;
+}
+.cobro-cerrar:hover { background: rgba(255, 255, 255, 0.16); opacity: 1; }
+.cobro-cerrar svg { width: 20px; height: 20px; }
+
+.cobro-etiqueta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6b7686;
+}
+.cobro-etiqueta svg { width: 18px; height: 18px; }
+
+.cobro-total {
+    display: grid;
+    justify-items: center;
+    gap: 0.2rem;
+    margin: 1.5rem 1.5rem 0;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px dashed #d5dce6;
+}
+.cobro-total-valor {
+    font-size: 2.6rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #0d47a1;
+    font-variant-numeric: tabular-nums;
+}
+
+.cobro-fila {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 1.5rem;
+    padding: 1rem 0;
+}
+.cobro-fila-valor {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #1f2a3d;
+    font-variant-numeric: tabular-nums;
+}
+.cobro-fila-valor.sin-dato { font-size: 1rem; font-weight: 500; font-style: italic; color: #9aa4b4; }
+
+.cobro-cambio {
+    display: grid;
+    justify-items: center;
+    gap: 0.15rem;
+    margin: 0 1.5rem;
+    padding: 1.1rem;
+    border: 1px solid #b7dfbb;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #edf8ee, #dcf1de);
+}
+.cobro-cambio .cobro-etiqueta { color: #2e7d32; }
+.cobro-cambio-valor {
+    font-size: 2.3rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #1b5e20;
+    font-variant-numeric: tabular-nums;
+}
+.cobro-cambio.neutro { border-color: #dbe4f0; background: #f4f6fa; }
+.cobro-cambio.neutro .cobro-etiqueta,
+.cobro-cambio.neutro .cobro-cambio-valor { color: #8a94a6; }
+.cobro-cambio.faltante { border-color: #f3c2bd; background: linear-gradient(135deg, #fdf0ee, #fbe1dd); }
+.cobro-cambio.faltante .cobro-etiqueta,
+.cobro-cambio.faltante .cobro-cambio-valor { color: #b32121; }
+
+.cobro-acciones {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 0.75rem;
+    padding: 1.5rem;
+}
+.cobro-acciones button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.9rem 1rem;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background-color 120ms, box-shadow 120ms, transform 80ms;
+}
+.cobro-acciones button:active { transform: translateY(1px); }
+.cobro-acciones kbd {
+    padding: 0.1rem 0.4rem;
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 5px;
+}
+.cobro-btn-cancelar { color: #3e4c59; background: #fff; border: 1px solid #cbd2d9; }
+.cobro-btn-cancelar:hover { background: #f4f5f7; }
+.cobro-btn-cancelar kbd { background: #eef1f5; color: #6b7686; }
+.cobro-btn-confirmar {
+    color: #fff;
+    border: none;
+    background: linear-gradient(135deg, #43a047, #2e7d32);
+    box-shadow: 0 8px 18px rgba(46, 125, 50, 0.3);
+}
+.cobro-btn-confirmar:hover { background: linear-gradient(135deg, #388e3c, #1b5e20); }
+.cobro-btn-confirmar svg { width: 20px; height: 20px; }
+.cobro-btn-confirmar kbd { background: rgba(255, 255, 255, 0.2); color: #fff; }
 
 /* ---------------- Paginas de gestion y reportes ---------------- */
 

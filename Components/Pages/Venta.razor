@@ -167,20 +167,20 @@
         </div>
 
         <button class="btn-cobrar" disabled="@(State.Items.Count == 0)" @onclick="AbrirCobro">
-            COBRAR (F10)
+            COBRAR <kbd>F10</kbd>
         </button>
         <button class="btn-fiar" disabled="@(State.Items.Count == 0)" @onclick="AbrirFiar">
-            Fiar venta (F8)
+            Fiar venta <kbd>F8</kbd>
         </button>
         <button class="btn-cancelar" disabled="@(State.Items.Count == 0)" @onclick="CancelarVenta">
-            Cancelar venta (Esc)
+            Cancelar venta <kbd>Esc</kbd>
         </button>
     </aside>
 
     <div class="venta-atajos">
         <span><kbd>Escanear</kbd> agrega al detalle</span>
         <span><kbd>F2</kbd> cambiar cantidad</span>
-        <span><kbd>Del</kbd> eliminar linea seleccionada</span>
+        <span><kbd>Supr</kbd> eliminar linea seleccionada</span>
         <span><kbd>F8</kbd> fiar</span>
         <span><kbd>F10</kbd> cobrar</span>
         <span><kbd>Esc</kbd> cancelar</span>
@@ -191,11 +191,16 @@
 {
     @* Solo confirma, como el ConfirmacionForm del escritorio. El dinero
        recibido y el cambio se digitan en la barra lateral; exigirlos aqui
-       obligaria a escribirlos dos veces y bloquearia el cobro. *@
+       obligaria a escribirlos dos veces y bloquearia el cobro. 
     <ConfirmDialog Titulo="Cobrar venta"
                    Mensaje="@MensajeCobro"
                    OnAceptar="ConfirmarCobro"
-                   OnCancelar="() => _mostrarCobro = false" />
+                   OnCancelar="() => _mostrarCobro = false" />*@
+    <CobroDialog Total="State.Total"
+                 DineroRecibido="State.DineroRecibido"
+                 Cambio="State.Cambio"
+                 OnConfirmar="ConfirmarCobro"
+                 OnCancelar="() => _mostrarCobro = false" />
 }
 
 @if (_mostrarFiar)
