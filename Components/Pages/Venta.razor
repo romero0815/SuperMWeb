@@ -68,7 +68,7 @@
                         @foreach (var p in _paginaCatalogo)
                         {
                             <tr>
-                                <td>@p.Nombre</td>
+                                <td style="font-weight:600;">@p.Nombre</td>
                                 <td>@p.Descripcion</td>
                                 <td class="numero">@p.PrecioVenta.ToString("C0")</td>
                                 <td class="numero"><span class="stock-pill @ClaseStock(p.Stock)">@p.Stock</span></td>
@@ -120,7 +120,7 @@
                         var cls = idx == _seleccionada ? "seleccionada" : null;
                         <tr class="@cls" @onclick="() => Seleccionar(idx)">
                             <td>@(idx + 1)</td>
-                            <td>@l.Nombre</td>
+                            <td style="font-weight:600;">@l.Nombre</td>
                             <td class="numero">@l.Cantidad</td>
                             <td class="numero">@l.PrecioUnitario.ToString("C0")</td>
                             <td class="numero">@l.Subtotal.ToString("C0")</td>

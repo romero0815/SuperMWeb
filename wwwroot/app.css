@@ -390,6 +390,7 @@ h1:focus { outline: none; }
 .venta-detalle th.numero {
     text-align: right;
     font-variant-numeric: tabular-nums;
+    font-weight:600;
 }
 
 .venta-detalle tbody tr {
@@ -398,8 +399,8 @@ h1:focus { outline: none; }
 }
 .venta-detalle tbody tr:hover { background: #f9fafb; }
 .venta-detalle tbody tr.seleccionada {
-    background: #e3f2fd;
-    box-shadow: inset 3px 0 0 #1976d2;
+    background: #e4fde3;
+    box-shadow: inset 3px 0 0 #37d219;
 }
 
 .venta-detalle .vacio {
@@ -677,11 +678,20 @@ h1:focus { outline: none; }
     letter-spacing: 0.05em;
     font-weight: 600;
 }
+tr:nth-child(even) {
+    background-color: #D6E2FF;
+}
+tr:hover {
+    background-color: #ddd;
+}
 .tabla td.numero, .tabla th.numero {
     text-align: right;
     font-variant-numeric: tabular-nums;
+    font-weight:600;
 }
-.tabla tbody tr:hover { background: #f9fafb; }
+.tabla tbody tr:hover {
+    background: #F2F6FF;
+}
 .tabla .vacio-fila {
     text-align: center;
     color: #9aa5b1;
@@ -966,7 +976,7 @@ h1:focus { outline: none; }
 }
 .campo-form .campo-error { font-size: 0.8rem; color: #b32121; }
 
-.confirm-texto { margin: 0 0 1.25rem; color: #3e4c59; line-height: 1.5; }
+.confirm-texto { margin: 0 0 1.25rem; color: #3e4c59; line-height: 1.5; font-weight:700; }
 
 .modal .btn-peligro-solido { background: #b32121; color: #fff; }
 .modal .btn-peligro-solido:hover { background: #8e1a1a; }
