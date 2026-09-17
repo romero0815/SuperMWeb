@@ -21,7 +21,7 @@
 ; directiva del preprocesador).
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.0.1"
 #endif
 #ifndef PublishDir
   #define PublishDir "..\..\artifacts\SuperMWeb\publish"
@@ -30,7 +30,29 @@
   #define OutputDir "..\..\artifacts\SuperMWeb\instalador"
 #endif
 
-#define AppName "SuperM Web POS"
+; La caja no tiene .NET instalado: la publicacion DEBE ser self-contained.
+; Una publicacion dependiente del framework (por ejemplo desde un perfil de
+; Visual Studio con SelfContained=false) instala bien pero el servicio no
+; arranca. Su runtimeconfig.json dice "frameworks" en vez de
+; "includedFrameworks": si es asi, no se compila.
+#define RuntimeConfig PublishDir + "\SuperMWeb.runtimeconfig.json"
+#if !FileExists(RuntimeConfig)
+  #error No se encontro SuperMWeb.runtimeconfig.json en la publicacion. Genere el instalador con installer\build-installer.ps1.
+#endif
+#define EsSelfContained 0
+#define ArchivoRuntimeConfig FileOpen(RuntimeConfig)
+#sub RevisarLineaRuntimeConfig
+  #if Pos("includedFrameworks", FileRead(ArchivoRuntimeConfig)) > 0
+    #expr EsSelfContained = 1
+  #endif
+#endsub
+#for {0; !FileEof(ArchivoRuntimeConfig); 0} RevisarLineaRuntimeConfig
+#expr FileClose(ArchivoRuntimeConfig)
+#if !EsSelfContained
+  #error La publicacion NO es self-contained: en la caja el servicio no arrancaria porque no tiene .NET. Genere el instalador con installer\build-installer.ps1 (no con el perfil de publicacion de Visual Studio).
+#endif
+
+#define AppName "Minimarket el cairo WEB"
 #define ServiceName "SuperMWeb"
 #define ExeName "SuperMWeb.exe"
 
