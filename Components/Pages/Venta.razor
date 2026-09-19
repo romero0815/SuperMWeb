@@ -512,7 +512,7 @@
                 if (State.Items.Count > 0) _mostrarFiar = true;
                 break;
             case "F10":
-                if (State.Items.Count > 0) _mostrarCobro = true;
+                if (State.Items.Count > 0) _mostrarCobro = true; await AbrirCajonAsync();
                 break;
             case "Escape":
                 if (State.Items.Count > 0) await CancelarVenta();
