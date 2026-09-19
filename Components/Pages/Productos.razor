@@ -10,6 +10,8 @@
 @inject ScannerService Scanner
 @inject IJSRuntime JS
 @inject IConfiguration Config
+@inject CajonMonedero Cajon
+@inject ILogger<Productos> Logger
 
 @* Equivalente de ProductosForm del desktop: grilla de productos activos,
    busqueda por nombre y por codigo de barras, alta/edicion/baja logica,
@@ -17,7 +19,7 @@
 
 <PageTitle>Productos - @Config["Negocio:Nombre"]</PageTitle>
 
-<div class="pagina">
+<div class="pagina" tabindex="0" @onkeydown="OnKeyDown">
 
     <div class="pagina-header">
         <h1>Productos</h1>
@@ -236,6 +238,16 @@
             StateHasChanged();
         });
     }
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (_mostrarFormulario || _mostrarEtiqueta || _mostrarImportar || _bajaPendiente is not null) return;
+        switch (e.Key)
+        {
+            case "F9": //when e.CtrlKey && e.ShiftKey && !e.AltKey:
+                await AbrirCajonAsync();
+                break;
+        }
+    }
 
     private async Task Cargar()
     {
@@ -396,6 +408,21 @@
         finally
         {
             _importando = false;
+        }
+    }
+
+    // Devuelve null si el cajon abrio, o el motivo del fallo.
+    private async Task<string?> AbrirCajonAsync()
+    {
+        try
+        {
+            var res = await Cajon.AbrirAsync();
+            return res.Exitoso ? null : res.MensajeError;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error al abrir el cajon monedero");
+            return ex.Message;
         }
     }
 

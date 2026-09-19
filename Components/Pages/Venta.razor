@@ -14,6 +14,8 @@
 @inject IProductosRepository ProductosRepo
 @inject IVentasRepository VentasRepo
 @inject ITicketPrinter Printer
+@inject CajonMonedero Cajon
+@inject ILogger<Venta> Logger
 @inject IJSRuntime JS
 @inject IConfiguration Config
 @inject AuthenticationStateProvider Auth
@@ -279,7 +281,7 @@
     private IReadOnlyList<ProductoListado> _catalogo = Array.Empty<ProductoListado>();
     private string _filtroCatalogo = string.Empty;
     private int _paginaCatalogoActual = 1;
-    private int _tamanoCatalogo = 5;
+    private int _tamanoCatalogo = 25;
 
     private IEnumerable<ProductoListado> _paginaCatalogo =>
         _catalogo.Skip((_paginaCatalogoActual - 1) * _tamanoCatalogo).Take(_tamanoCatalogo);
@@ -291,6 +293,9 @@
     private CancellationTokenSource? _feedbackCts;
     private int _idUsuario;
 
+    // Solo administradores abren el cajon sin venta (Ctrl+Shift+F9).
+    private bool _puedeAbrirCajon;
+
     protected override async Task OnInitializedAsync()
     {
         var auth = await Auth.GetAuthenticationStateAsync();
@@ -299,6 +304,7 @@
 
         // DeudorMovimiento.Usuario guarda el nombre de usuario como texto libre.
         _usuario = auth.User.FindFirst(ClaimTypes.Name)?.Value;
+        _puedeAbrirCajon = auth.User.IsInRole("Administrador") || auth.User.IsInRole("SuperAdmin");
 
         State.OnCambio += OnVentaCambio;
 
@@ -511,6 +517,10 @@
             case "Escape":
                 if (State.Items.Count > 0) await CancelarVenta();
                 break;
+            // Atajo reservado, no se muestra en pantalla: abre el cajon sin venta.
+            case "F9": //when e.CtrlKey && e.ShiftKey && !e.AltKey:
+                await AbrirCajonManual();
+                break;
         }
     }
 
@@ -531,7 +541,14 @@
         await CargarCatalogo();
     }
 
-    private void AbrirCobro() { if (State.Items.Count > 0) _mostrarCobro = true; }
+    private async Task AbrirCobro()
+    {
+        if (State.Items.Count > 0)
+        {
+            _mostrarCobro = true;
+            await AbrirCajonAsync();
+        }
+    }
 
     private void AbrirFiar() { if (State.Items.Count > 0) _mostrarFiar = true; }
 
@@ -572,12 +589,43 @@
         var cambio = VentaCalculadora.CalcularCambio(recibido, total);
         await ReiniciarVentaAsync();
 
+        
         // Se pregunta antes del aviso: MostrarFeedback espera a que el mensaje
         // se oculte, y la confirmacion debe verse de inmediato.
         _impresionPendiente = new ImpresionPendiente(items, total);
-        await MostrarFeedback("exito", recibido > 0
+        var mensaje = recibido > 0
             ? $"Venta registrada. Cambio: {cambio.ToString("C0")}"
-            : "Venta registrada.");
+            : "Venta registrada.";
+       
+         await MostrarFeedback("exito", mensaje);
+        
+    }
+
+    // Devuelve null si el cajon abrio, o el motivo del fallo.
+    private async Task<string?> AbrirCajonAsync()
+    {
+        try
+        {
+            var res = await Cajon.AbrirAsync();
+            return res.Exitoso ? null : res.MensajeError;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error al abrir el cajon monedero");
+            return ex.Message;
+        }
+    }
+
+    // Apertura sin venta (dar cambio, arqueo). Queda en el log para control de caja.
+    private async Task AbrirCajonManual()
+    {
+        Logger.LogInformation("Cajon abierto manualmente por {Usuario}", _usuario);
+        var error = await AbrirCajonAsync();
+        if (error is not null)
+        {
+            await Ui.BeepAsync(220, 250);
+            await MostrarFeedback("error", $"No se pudo abrir el cajon: {error}");
+        }
     }
 
     // Venta fiada. A diferencia del cobro normal, la venta y el cargo al deudor

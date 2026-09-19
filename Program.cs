@@ -77,6 +77,13 @@ else
         "Printer:Tipo=Local solo esta soportado en Windows. Use 'Null' en otras plataformas.");
 }
 
+// Cajon monedero: se abre con un pulso por la impresora (Cajon:Habilitado,
+// Cajon:Pin 0 = pin 2, 1 = pin 5). Con la impresora Null tampoco toca hardware.
+var cajonHabilitado = builder.Configuration.GetValue("Cajon:Habilitado", false);
+var cajonPin = builder.Configuration.GetValue<byte>("Cajon:Pin", 0);
+builder.Services.AddSingleton(sp =>
+    new CajonMonedero(sp.GetRequiredService<ITicketPrinter>(), cajonHabilitado, cajonPin));
+
 // ---------- Autenticacion (cookie) ----------
 
 // Cookie de sesion contra la tabla Usuarios. Vive mientras dure el navegador

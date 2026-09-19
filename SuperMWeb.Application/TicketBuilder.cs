@@ -110,6 +110,17 @@ public static class TicketBuilder
         return bytes.ToArray();
     }
 
+    // Pulso al conector DK de la impresora para abrir el cajon monedero
+    // (ESC p m t1 t2). m=0 dispara el pin 2 y m=1 el pin 5; t1/t2 son el
+    // tiempo encendido/apagado en unidades de 2 ms (50 ms / 500 ms).
+    public static byte[] ConstruirAperturaCajon(byte pin = 0)
+    {
+        if (pin > 1)
+            throw new ArgumentOutOfRangeException(nameof(pin), "El pin del cajon debe ser 0 (pin 2) o 1 (pin 5).");
+
+        return new byte[] { 0x1B, 0x70, pin, 0x19, 0xFA };
+    }
+
     private static string CentrarTexto(string texto, int ancho = AnchoCentrado)
     {
         int espacios = (ancho - texto.Length) / 2;
