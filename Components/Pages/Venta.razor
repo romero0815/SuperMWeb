@@ -355,8 +355,8 @@
 
     // Agregar desde el catalogo pasa por la misma ruta que el escaneo, para que
     // la validacion de stock y la union de lineas sean identicas.
-    private Task AgregarDesdeCatalogo(ProductoListado p) =>
-        AgregarAlDetalleAsync(p.IdProducto, p.Nombre, p.PrecioVenta);
+    private async Task AgregarDesdeCatalogo(ProductoListado p) =>
+        await AgregarAlDetalleAsync(p.IdProducto, p.Nombre, p.PrecioVenta);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -512,7 +512,11 @@
                 if (State.Items.Count > 0) _mostrarFiar = true;
                 break;
             case "F10":
-                if (State.Items.Count > 0) _mostrarCobro = true; await AbrirCajonAsync();
+                if (State.Items.Count > 0)
+                {
+                    _mostrarCobro = true; 
+                    await AbrirCajonAsync();
+                }
                 break;
             case "Escape":
                 if (State.Items.Count > 0) await CancelarVenta();
