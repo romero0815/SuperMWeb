@@ -62,7 +62,7 @@ public sealed class ReportesRepository : IReportesRepository
     public Task<IReadOnlyList<ProductoStockBajo>> ListarStockBajoAsync(CancellationToken ct = default)
     {
         const string sql = @"
-            SELECT ISNULL(p.CodigoBarras, '') AS CodigoBarras, 
+            SELECT TOP(150) ISNULL(p.CodigoBarras, '') AS CodigoBarras, 
                    CONCAT(p.Nombre, ' ', p.descripcion) AS Nombre, 
                    p.Stock
             FROM Productos p
