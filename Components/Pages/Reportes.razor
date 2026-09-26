@@ -130,6 +130,35 @@
                        OnCambiarTamano="CambiarTamanoVentas" />
         </section>
 
+        <!-- Top 20 mas vendidos del mes -->
+        <section class="panel">
+            <h2>20 productos mas vendidos de @_nombreMes</h2>
+            @if (_masVendidos.Count == 0)
+            {
+                <p class="cargando">Sin ventas registradas este mes.</p>
+            }
+            else
+            {
+                var maximo = _masVendidos.Max(m => m.TotalVendido);
+                <div class="barras">
+                    @foreach (var m in _masVendidos)
+                    {
+                        var ancho = maximo == 0 ? 0 : (int)Math.Round(m.TotalVendido * 100.0 / maximo);
+                        <div class="barra-fila">
+                            <span class="nombre" title="@m.Producto">@m.Producto</span>
+                            <div class="pista"><div class="relleno" style="width:@(ancho)%"></div></div>
+                            <span class="cantidad">@m.TotalVendido</span>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        
+    </div>
+
+    <div class="rejilla-2">
+
         <!-- Panel de compras -->
         <section class="panel">
             <div class="panel-barra">
@@ -181,7 +210,9 @@
                                     <td class="numero">@c.Total.ToString("C0")</td>
                                     <td>
                                         <button class="btn btn-secundario btn-mini"
-                                                @onclick="() => VerDocumento(c.IdCompra, true)">Ver</button>
+                                                @onclick="() => VerDocumento(c.IdCompra, true)">
+                                            Ver
+                                        </button>
                                     </td>
                                 </tr>
                             }
@@ -207,34 +238,8 @@
                        OnCambiarPagina="(int p) => _paginaComprasActual = p"
                        OnCambiarTamano="CambiarTamanoCompras" />
         </section>
-    </div>
 
-    <div class="rejilla-2">
-
-        <!-- Top 10 mas vendidos del mes -->
-        <section class="panel">
-            <h2>10 productos mas vendidos de @_nombreMes</h2>
-            @if (_masVendidos.Count == 0)
-            {
-                <p class="cargando">Sin ventas registradas este mes.</p>
-            }
-            else
-            {
-                var maximo = _masVendidos.Max(m => m.TotalVendido);
-                <div class="barras">
-                    @foreach (var m in _masVendidos)
-                    {
-                        var ancho = maximo == 0 ? 0 : (int)Math.Round(m.TotalVendido * 100.0 / maximo);
-                        <div class="barra-fila">
-                            <span class="nombre" title="@m.Producto">@m.Producto</span>
-                            <div class="pista"><div class="relleno" style="width:@(ancho)%"></div></div>
-                            <span class="cantidad">@m.TotalVendido</span>
-                        </div>
-                    }
-                </div>
-            }
-        </section>
-
+        
         <!-- Stock minimo -->
         <section class="panel">
             <h2>Productos con stock bajo (5 o menos)</h2>
@@ -242,6 +247,7 @@
                 <table class="tabla">
                     <thead>
                         <tr>
+                            <th>Codigo Barras</th>
                             <th>Producto</th>
                             <th class="numero">Stock</th>
                         </tr>
@@ -253,9 +259,10 @@
                         }
                         else
                         {
-                            @foreach (var p in _stockBajo)
+                            @foreach (var p in _paginaProductosStockBajo)
                             {
                                 <tr>
+                                    <td>@(!string.IsNullOrEmpty(p.CodigoBarras) ? p.CodigoBarras : "N/A")</td>
                                     <td>@p.Nombre</td>
                                     <td class="numero"><span class="stock-pill bajo">@p.Stock</span></td>
                                 </tr>
@@ -264,6 +271,13 @@
                     </tbody>
                 </table>
             </div>
+
+            <Paginador TotalFilas="_stockBajo.Count"
+                       Pagina="_paginaStockBajoActual"
+                       TamanoPagina="_tamanoStockBajo"
+                       Tamanos="@(new[] { 10, 20, 50 })"
+                       OnCambiarPagina="(int p) => _paginaStockBajoActual = p"
+                       OnCambiarTamano="CambiarTamanoStockBajo" />
         </section>
     </div>
 </div>
@@ -294,12 +308,18 @@
     private int _paginaComprasActual = 1;
     private int _tamanoCompras = 10;
 
+    private int _paginaStockBajoActual = 1;
+    private int _tamanoStockBajo = 10;
+
     // Los totales del pie siguen sumando TODO el periodo, no solo la pagina.
     private IEnumerable<ResumenVenta> _paginaVentas =>
         _ventas.Skip((_paginaVentasActual - 1) * _tamanoVentas).Take(_tamanoVentas);
 
     private IEnumerable<ResumenCompra> _paginaCompras =>
         _compras.Skip((_paginaComprasActual - 1) * _tamanoCompras).Take(_tamanoCompras);
+
+    private IEnumerable<ProductoStockBajo> _paginaProductosStockBajo =>
+        _stockBajo.Skip((_paginaStockBajoActual - 1) * _tamanoStockBajo).Take(_tamanoStockBajo);
 
     private (int Id, bool EsCompra)? _documentoAbierto;
     private string? _error;
@@ -318,7 +338,7 @@
         {
             _inventario = await ReportesRepo.ObtenerResumenInventarioAsync();
             _masVendidos = await ReportesRepo.ListarMasVendidosDelMesAsync();
-            _stockBajo = await ReportesRepo.ListarStockBajoAsync();
+            await CargarProductosStockBajo();
             await CargarVentas();
             await CargarCompras();
         }
@@ -358,6 +378,19 @@
             _ventas = Array.Empty<ResumenVenta>();
         }
     }
+    private async Task CargarProductosStockBajo()
+    {
+        try
+        {
+            _stockBajo = await ReportesRepo.ListarStockBajoAsync();
+            _paginaStockBajoActual = 1;
+        }
+        catch(Exception ex)
+        {
+            _error = $"No se pudieron cargar los productos con stock bajo: {ex.Message}";
+            _stockBajo = Array.Empty<ProductoStockBajo>();
+        }
+    }
 
     private async Task CargarCompras()
     {
@@ -388,6 +421,13 @@
         _tamanoCompras = tamano;
         var total = Math.Max(1, (int)Math.Ceiling(_compras.Count / (double)_tamanoCompras));
         if (_paginaComprasActual > total) _paginaComprasActual = total;
+    }
+
+    private void CambiarTamanoStockBajo(int tamano)
+    {
+        _tamanoStockBajo = tamano;
+        var total = Math.Max(1, (int)Math.Ceiling(_stockBajo.Count / (double)_tamanoStockBajo));
+        if (_paginaStockBajoActual > total) _paginaStockBajoActual = total;
     }
 
     private void VerDocumento(int id, bool esCompra) => _documentoAbierto = (id, esCompra);

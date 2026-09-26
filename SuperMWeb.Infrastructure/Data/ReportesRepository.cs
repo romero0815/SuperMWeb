@@ -46,14 +46,14 @@ public sealed class ReportesRepository : IReportesRepository
     public Task<IReadOnlyList<ProductoMasVendido>> ListarMasVendidosDelMesAsync(CancellationToken ct = default)
     {
         const string sql = @"
-            SELECT TOP(10) p.Nombre AS Producto, SUM(df.Cantidad) AS TotalVendido
-            FROM DetalleFacturas df
-            INNER JOIN Productos p ON df.IdProducto = p.IdProducto
-            INNER JOIN Facturas f  ON df.IdFactura  = f.IdFactura
-            WHERE MONTH(f.Fecha) = MONTH(GETDATE())
-              AND YEAR(f.Fecha)  = YEAR(GETDATE())
-            GROUP BY p.Nombre
-            ORDER BY TotalVendido DESC";
+                    SELECT TOP(20) CONCAT(p.Nombre, ' ', p.Descripcion) AS Producto, SUM(df.Cantidad) AS TotalVendido
+        FROM DetalleFacturas df
+        INNER JOIN Productos p ON df.IdProducto = p.IdProducto
+        INNER JOIN Facturas f  ON df.IdFactura  = f.IdFactura
+        WHERE MONTH(f.Fecha) = MONTH(GETDATE())
+          AND YEAR(f.Fecha)  = YEAR(GETDATE())
+        GROUP BY p.Nombre, p.Descripcion
+        ORDER BY TotalVendido DESC";
 
         return LeerListaAsync(sql, null, ct,
             r => new ProductoMasVendido(r.GetString(0), r.GetInt32(1)));
@@ -62,13 +62,19 @@ public sealed class ReportesRepository : IReportesRepository
     public Task<IReadOnlyList<ProductoStockBajo>> ListarStockBajoAsync(CancellationToken ct = default)
     {
         const string sql = @"
-            SELECT TOP(50) p.Nombre, p.Stock
+            SELECT p.CodigoBarras, CONCAT(p.Nombre, ' ' , p.descripcion) AS Nombre, p.Stock
             FROM Productos p
             WHERE p.Stock <= 5 AND p.Active = 1
+            AND EXISTS(
+                SELECT 1 FROM DetalleFacturas df
+	            INNER JOIN Facturas f ON df.IdFactura = f.IdFactura 
+	            WHERE df.IdProducto = p.IdProducto
+	            AND f.Fecha >= DATEADD(MONTH, -3, GETDATE())
+            )
             ORDER BY p.Stock ASC";
 
         return LeerListaAsync(sql, null, ct,
-            r => new ProductoStockBajo(r.GetString(0), r.GetInt32(1)));
+            r => new ProductoStockBajo(r.GetString(0), r.GetString(1), r.GetInt32(2)));
     }
 
     // ---------- Ventas ----------
