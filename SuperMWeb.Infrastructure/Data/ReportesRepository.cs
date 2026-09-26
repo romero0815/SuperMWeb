@@ -62,19 +62,21 @@ public sealed class ReportesRepository : IReportesRepository
     public Task<IReadOnlyList<ProductoStockBajo>> ListarStockBajoAsync(CancellationToken ct = default)
     {
         const string sql = @"
-            SELECT p.CodigoBarras, CONCAT(p.Nombre, ' ' , p.descripcion) AS Nombre, p.Stock
+            SELECT ISNULL(p.CodigoBarras, '') AS CodigoBarras, 
+                   CONCAT(p.Nombre, ' ', p.descripcion) AS Nombre, 
+                   p.Stock
             FROM Productos p
             WHERE p.Stock <= 5 AND p.Active = 1
             AND EXISTS(
                 SELECT 1 FROM DetalleFacturas df
-	            INNER JOIN Facturas f ON df.IdFactura = f.IdFactura 
-	            WHERE df.IdProducto = p.IdProducto
-	            AND f.Fecha >= DATEADD(MONTH, -3, GETDATE())
+                INNER JOIN Facturas f ON df.IdFactura = f.IdFactura 
+                WHERE df.IdProducto = p.IdProducto
+                AND f.Fecha >= DATEADD(MONTH, -3, GETDATE())
             )
             ORDER BY p.Stock ASC";
 
         return LeerListaAsync(sql, null, ct,
-            r => new ProductoStockBajo(r.GetString(0), r.GetString(1), r.GetInt32(2)));
+            r => new ProductoStockBajo(r.IsDBNull(0) ? string.Empty : r.GetString(0), r.GetString(1), r.GetInt32(2)));
     }
 
     // ---------- Ventas ----------
