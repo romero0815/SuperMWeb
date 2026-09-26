@@ -28,14 +28,39 @@ public static class AuthEndpoints
             var clave = (form["Clave"].ToString() ?? string.Empty).Trim();
             var returnUrl = form["ReturnUrl"].ToString();
 
-            var u = await usuarios.AutenticarAsync(usuario, clave, http.RequestAborted);
-            if (u is null)
+            //validamos usuario ingresado y recolectamos su informacion
+            var userDB = await usuarios.ObtenerPorUsuarioAsync(usuario, http.RequestAborted);
+            if(userDB is null)
+            {
+                var qs = string.IsNullOrEmpty(returnUrl)
+                    ? "?error=2"
+                    : $"?error=2&returnUrl={Uri.EscapeDataString(returnUrl)}";
+                return Results.Redirect("/login" + qs);
+            }
+
+            //esto solo servira mientras se hace el procesos de migracion, una vez todos los usuarios ya tengan su clave actualizada
+            //ya no entrara por el if
+            var esHash = PasswordHelper.EsHashBCrypt(userDB.Clave);
+            if(!esHash)
+            {
+                //actualizamos silenciosamente la clave del usuario a hash bcrypt
+                userDB.Clave = PasswordHelper.HashPassword(userDB.Clave);
+                await usuarios.ActualizarContraseñaAsync(userDB.IdUsuario, userDB.Clave, http.RequestAborted);
+            }
+
+
+            //validamos la clave ingresada con la clave encriptada en la base de datos
+            var validatePassword = PasswordHelper.VerifyPassword(clave, userDB.Clave);
+            if (!validatePassword)
             {
                 var qs = string.IsNullOrEmpty(returnUrl)
                     ? "?error=1"
                     : $"?error=1&returnUrl={Uri.EscapeDataString(returnUrl)}";
                 return Results.Redirect("/login" + qs);
             }
+
+            //si todo esta bien, autenticamos al usuario y creamos la cookie de autenticacion
+            var u = await usuarios.AutenticarAsync(userDB.UsuarioLogin, userDB.Clave, http.RequestAborted);
 
             var claims = new List<Claim>
             {

@@ -19,12 +19,14 @@ public interface IUsuariosRepository
     Task<IReadOnlyList<Rol>> ListarRolesAsignablesAsync(CancellationToken ct = default);
 
     Task<Usuario?> ObtenerPorIdAsync(int idUsuario, CancellationToken ct = default);
+    Task<Usuario?> ObtenerPorUsuarioAsync(string usuario, CancellationToken ct = default);
 
     // La clave se guarda en texto plano, igual que el desktop (R2 del
     // inventario). Es deuda tecnica conocida, no un descuido de la migracion.
     Task<int> CrearAsync(Usuario usuario, CancellationToken ct = default);
 
     Task ActualizarAsync(Usuario usuario, CancellationToken ct = default);
+    Task ActualizarContraseñaAsync(int idUsuario, string nuevaClave, CancellationToken ct = default);
 
     // Soft-delete: Active = 0.
     Task DesactivarAsync(int idUsuario, CancellationToken ct = default);

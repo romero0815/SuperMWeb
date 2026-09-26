@@ -65,6 +65,11 @@
                 <div class="login-error" role="alert">Usuario o contraseña incorrectos.</div>
             }
 
+            @if (Error == 2)
+            {
+                <div class="login-error" role="alert">Usuario incorrecto o mal escrito</div>
+            }
+
             <form method="post" action="/api/login" autocomplete="off">
                 <input type="hidden" name="__RequestVerificationToken" value="@_token" />
                 @if (!string.IsNullOrEmpty(ReturnUrl))

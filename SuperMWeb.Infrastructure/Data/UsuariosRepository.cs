@@ -115,6 +115,35 @@ public sealed class UsuariosRepository : IUsuariosRepository
         };
     }
 
+    public async Task<Usuario?> ObtenerPorUsuarioAsync(string usuario, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(usuario))
+            return null;
+
+        const string sql = @"
+            SELECT u.IdUsuario, u.Nombre, u.Usuario, u.Clave, u.IdRol, u.Active
+            FROM Usuarios u
+            WHERE u.Usuario = @usuario AND u.Active = 1";
+
+        await using var con = _factory.Crear();
+        await con.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, con);
+        cmd.Parameters.Add(new SqlParameter("@usuario", usuario.Trim()));
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+
+        return new Usuario
+        {
+            IdUsuario = reader.GetInt32(0),
+            Nombre = reader.GetString(1),
+            UsuarioLogin = reader.GetString(2),
+            Clave = reader.GetString(3),
+            IdRol = reader.GetInt32(4),
+            Active = reader.IsDBNull(5) ? null : reader.GetBoolean(5)
+        };
+    }
+
     public async Task<int> CrearAsync(Usuario usuario, CancellationToken ct = default)
     {
         const string sql = @"
@@ -143,6 +172,21 @@ public sealed class UsuariosRepository : IUsuariosRepository
         await using var cmd = new SqlCommand(sql, con);
         AgregarCampos(cmd, usuario);
         cmd.Parameters.Add(new SqlParameter("@id", usuario.IdUsuario));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task ActualizarContraseñaAsync(int idUsuario, string nuevaClave, CancellationToken ct = default)
+    {
+        const string sql = @"
+            UPDATE Usuarios
+            SET Clave = @clave
+            WHERE IdUsuario = @id";
+
+        await using var con = _factory.Crear();
+        await con.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, con);
+        cmd.Parameters.Add(new SqlParameter("@clave", nuevaClave));
+        cmd.Parameters.Add(new SqlParameter("@id", idUsuario));
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
