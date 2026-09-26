@@ -38,7 +38,7 @@
                         <th>Nombre</th>
                         <th>Usuario</th>
                         <th>Rol</th>
-                        <th></th>
+                        <th style="text-align:center;">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -61,6 +61,7 @@
                                 <td>@u.NombreRol</td>
                                 <td class="acciones-fila">
                                     <button class="btn btn-primario btn-mini" @onclick="() => AbrirEdicion(u)">Editar</button>
+                                    <button class="btn btn-precaucion btn-mini" @onclick="() => AbrirEditarContraseña(u)">Actualizar contraseña</button>
                                     <button class="btn btn-peligro btn-mini" @onclick="() => _bajaPendiente = u">Eliminar</button>
                                 </td>
                             </tr>
@@ -94,17 +95,21 @@
                     <input id="usUsuario" @bind="_usuario" @bind:event="oninput"
                            disabled="@(_idEnEdicion > 0)" autocomplete="off" />
                 </div>
-                <div class="campo-form">
-                    <label for="usClave">Contrasena *</label>
-                    <div class="campo-clave">
-                        <input id="usClave" type="@(_verClave ? "text" : "password")"
-                               @bind="_clave" @bind:event="oninput" autocomplete="new-password" />
-                        <button type="button" class="btn btn-secundario btn-mini"
-                                @onclick="() => _verClave = !_verClave">
-                            @(_verClave ? "Ocultar" : "Ver")
-                        </button>
+                @*Solo se muestra al crear usuario*@
+                @if (_idEnEdicion == 0)
+                {
+                    <div class="campo-form">
+                        <label for="usClave">Contrasena *</label>
+                        <div class="campo-clave">
+                            <input id="usClave" type="@(_verClave ? "text" : "password")"
+                                   @bind="_clave" @bind:event="oninput" autocomplete="new-password" />
+                            <button type="button" class="btn btn-secundario btn-mini"
+                                    @onclick="() => _verClave = !_verClave">
+                                @(_verClave ? "Ocultar" : "Ver")
+                            </button>
+                        </div>
                     </div>
-                </div>
+                }
                 <div class="campo-form">
                     <label for="usRol">Rol *</label>
                     <select id="usRol" @bind="_idRol">
@@ -126,6 +131,40 @@
     </div>
 }
 
+@if (_mostrarFormularioContraseña)
+{
+    <div class="modal-backdrop" @onclick="Cerrar">
+        <div class="modal modal-form" @onclick:stopPropagation="true">
+            <h2>Actualizar contraseña</h2>
+
+            @if (_errorFormulario is not null)
+            {
+                <div class="feedback error">@_errorFormulario</div>
+            }
+
+            <div class="form-rejilla">
+                <div class="campo-form ancho-total">
+                    <label for="usClave">Nueva contraseña *</label>
+                    <input id="usClave" @bind="_clave" type="password"
+                        @bind:event="oninput" autocomplete="new-password" />
+                </div>
+                <div class="campo-form ancho-total">
+                    <label for="usClave">Confirmar contraseña *</label>
+                    <input id="usClave" @bind="_claveConfirmacion" type="password"
+                        @bind:event="oninput" autocomplete="new-password" />
+                </div>
+            </div>
+
+            <div class="acciones">
+                <button class="btn-secondary" @onclick="Cerrar">Cancelar</button>
+                <button class="btn-primary" disabled="@_guardando" @onclick="ActualizarContraseñaUsuario">
+                    Actualizar
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (_bajaPendiente is not null)
 {
     <ConfirmDialog Titulo="Eliminar usuario"
@@ -141,10 +180,12 @@
     private bool _cargando = true;
 
     private bool _mostrarFormulario;
+    private bool _mostrarFormularioContraseña;
     private int _idEnEdicion;
     private string _nombre = string.Empty;
     private string _usuario = string.Empty;
     private string _clave = string.Empty;
+    private string _claveConfirmacion = string.Empty;
     private int _idRol;
     private bool _verClave;
     private bool _guardando;
@@ -228,8 +269,20 @@
             await MostrarFeedback("error", $"No se pudo cargar el usuario: {ex.Message}");
         }
     }
+    private void AbrirEditarContraseña(UsuarioListado u)
+    {
+        _errorFormulario = null;
+        _clave = string.Empty;
+        _claveConfirmacion = string.Empty;
+        _idEnEdicion = u.IdUsuario;
+        _mostrarFormularioContraseña = true;   
+    }
 
-    private void Cerrar() => _mostrarFormulario = false;
+    private void Cerrar() {
+        _idEnEdicion = -1;
+        _mostrarFormulario = false;
+        _mostrarFormularioContraseña = false;
+    }
 
     private async Task Guardar()
     {
@@ -244,7 +297,7 @@
                 IdUsuario = _idEnEdicion,
                 Nombre = _nombre.Trim(),
                 UsuarioLogin = _usuario.Trim(),
-                Clave = _clave.Trim(),
+                Clave = PasswordHelper.HashPassword(_clave.Trim()),
                 IdRol = _idRol
             };
 
@@ -260,6 +313,33 @@
         catch (Exception ex)
         {
             _errorFormulario = $"No se pudo guardar el usuario: {ex.Message}";
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    private async Task ActualizarContraseñaUsuario()
+    {
+        try
+        {
+            if (_idEnEdicion <= 0 || string.IsNullOrEmpty(_clave.Trim()) || string.IsNullOrEmpty(_claveConfirmacion.Trim())) return;
+
+            if(_clave.Trim() != _claveConfirmacion.Trim())
+            {
+                _errorFormulario = "Las contraseñas diligenciadas no coinciden, verifique nuevamente.";
+                return;
+            }
+
+            await UsuariosRepo.ActualizarContraseñaAsync(_idEnEdicion, PasswordHelper.HashPassword(_clave.Trim()));
+            _mostrarFormularioContraseña = false;
+            await MostrarFeedback("exito",
+                "Contraseña de usuario actualizada correctamente.");
+        }
+        catch (Exception ex)
+        {
+            _errorFormulario = $"No se pudo actualizar la contraseña: {ex.Message}";
         }
         finally
         {

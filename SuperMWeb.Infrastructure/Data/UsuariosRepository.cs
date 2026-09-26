@@ -164,14 +164,15 @@ public sealed class UsuariosRepository : IUsuariosRepository
     {
         const string sql = @"
             UPDATE Usuarios
-            SET Usuario = @usuario, Clave = @clave, IdRol = @idRol, Nombre = @nombre
+            SET IdRol = @idRol, Nombre = @nombre
             WHERE IdUsuario = @id";
 
         await using var con = _factory.Crear();
         await con.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, con);
-        AgregarCampos(cmd, usuario);
         cmd.Parameters.Add(new SqlParameter("@id", usuario.IdUsuario));
+        cmd.Parameters.Add(new SqlParameter("@idRol", usuario.IdRol));
+        cmd.Parameters.Add(new SqlParameter("@nombre", usuario.Nombre));
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
