@@ -115,7 +115,7 @@
         <div class="form-rejilla">
             <div class="campo-form">
                 <label for="fvValor">Valor a fiar *</label>
-                <input id="fvValor" inputmode="decimal" @bind="_valor" @bind:event="oninput" autocomplete="off" />
+                <InputPrecio Id="fvValor" @bind-value="_valor" />
             </div>
             <div class="campo-form">
                 <label for="fvDesc">Descripcion</label>
@@ -149,7 +149,7 @@
     private string _telNuevo = string.Empty;
     private string _cupoNuevo = string.Empty;
 
-    private string _valor = string.Empty;
+    private decimal _valor = 0m;
     private string _descripcion = "Venta fiada";
     private string? _error;
     private string? _confirmacion;
@@ -159,8 +159,8 @@
     private bool _cupoConfirmado;
     private bool _montoConfirmado;
 
-    private decimal Monto => FormatosTexto.IsNumberDecimal(_valor.Trim())
-        ? FormatosTexto.ParseValorMoneda(_valor.Trim())
+    private decimal Monto => FormatosTexto.IsNumberDecimal(_valor.ToString())
+        ? FormatosTexto.ParseValorMoneda(_valor.ToString())
         : 0m;
 
     private decimal SaldoResultante => _saldoSeleccionado + Monto;
@@ -172,7 +172,7 @@
     protected override async Task OnInitializedAsync()
     {
         // Se escribe con coma decimal para que pase la validacion de IsNumberDecimal.
-        _valor = TotalVenta.ToString("0.##", CultureInfo.InvariantCulture).Replace(".", ",");
+        _valor = TotalVenta;
         await CargarClientes();
     }
 
@@ -332,7 +332,7 @@
             return "Selecciona un cliente de la lista o registra uno nuevo.";
         }
 
-        var valor = _valor.Trim();
+        var valor = _valor.ToString();
         if (valor.Length == 0) return "El valor a fiar es obligatorio.";
         if (!FormatosTexto.IsNumberDecimal(valor)) return "El valor a fiar debe ser numerico.";
         if (FormatosTexto.ParseValorMoneda(valor) <= 0) return "El valor a fiar debe ser mayor a cero (0).";

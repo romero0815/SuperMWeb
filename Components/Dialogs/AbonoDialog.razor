@@ -46,7 +46,7 @@
             <div class="form-rejilla">
                 <div class="campo-form">
                     <label for="abValor">Valor del abono *</label>
-                    <input id="abValor" inputmode="decimal" @bind="_valor" @bind:event="oninput" autocomplete="off" />
+                    <InputPrecio Id="abValor" @bind-value="_valor" />
                 </div>
                 <div class="campo-form">
                     <label for="abDesc">Descripcion</label>
@@ -74,7 +74,7 @@
     private decimal _saldoActual;
     private bool _sinSaldo;
 
-    private string _valor = string.Empty;
+    private decimal _valor = 0m;
     private string _descripcion = string.Empty;
     private string? _confirmacion;
     private bool _guardando;
@@ -85,8 +85,8 @@
     {
         get
         {
-            var monto = FormatosTexto.IsNumberDecimal(_valor.Trim())
-                ? FormatosTexto.ParseValorMoneda(_valor.Trim())
+            var monto = FormatosTexto.IsNumberDecimal(_valor.ToString())
+                ? FormatosTexto.ParseValorMoneda(_valor.ToString())
                 : 0m;
             return _saldoActual - monto;
         }
@@ -129,14 +129,14 @@
 
     // Se escribe con coma decimal para que pase la validacion de IsNumberDecimal.
     private void AbonarTodo() =>
-        _valor = _saldoActual.ToString("0.##", CultureInfo.InvariantCulture).Replace(".", ",");
+        _valor = _saldoActual;
 
     private void Guardar()
     {
         _error = null;
 
         // Mismas reglas que FrmAgregarAbono.aplicarValidaciones.
-        var valor = _valor.Trim();
+        var valor = _valor.ToString();
 
         if (valor.Length == 0) { _error = "El valor del abono es obligatorio."; return; }
         if (!FormatosTexto.IsNumberDecimal(valor)) { _error = "El valor del abono debe ser numerico."; return; }
@@ -159,7 +159,7 @@
         _guardando = true;
         try
         {
-            var monto = FormatosTexto.ParseValorMoneda(_valor.Trim());
+            var monto = FormatosTexto.ParseValorMoneda(_valor.ToString());
             await DeudoresRepo.RegistrarAbonoAsync(IdDeudor, monto, _descripcion, _usuario);
 
             var restante = _saldoActual - monto;

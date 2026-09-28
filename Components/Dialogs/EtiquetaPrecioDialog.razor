@@ -22,7 +22,7 @@
             </div>
             <div class="campo-form ancho-total">
                 <label for="ePPrecio">Precio *</label>
-                <input id="ePPrecio" inputmode="decimal" @bind="_precio" @bind:event="oninput" autocomplete="off" />
+                <InputPrecio Id="ePPrecio" @bind-value="_precio" />
             </div>
         </div>
 
@@ -42,14 +42,14 @@
     [Parameter] public EventCallback OnCancelar { get; set; }
 
     private string _nombre = string.Empty;
-    private string _precio = string.Empty;
+    private decimal _precio;
     private bool _imprimiendo;
     private string? _error;
 
     protected override void OnParametersSet()
     {
         _nombre = NombreInicial ?? string.Empty;
-        _precio = PrecioInicial?.ToString("0.##") ?? string.Empty;
+        _precio = PrecioInicial ?? 0m;
     }
 
     private async Task Imprimir()
@@ -58,7 +58,7 @@
 
         // Mismas validaciones que ImprimirPreciosForm.aplicarValidaciones.
         var nombre = _nombre.Trim();
-        var precio = _precio.Trim();
+        var precio = _precio.ToString("0.##");
 
         if (nombre.Length == 0) { _error = "El nombre del producto es obligatorio."; return; }
         if (precio.Length == 0) { _error = "El precio del producto es obligatorio."; return; }

@@ -1,6 +1,7 @@
 @rendermode InteractiveServer
 @using SuperMWeb.Application
 @using SuperMWeb.Domain
+@using System.Globalization
 @inject IProductosRepository ProductosRepo
 @inject IProveedoresRepository ProveedoresRepo
 
@@ -43,12 +44,12 @@
 
             <div class="campo-form">
                 <label for="pPrecioC">Precio compra *</label>
-                <input id="pPrecioC" inputmode="decimal" @bind="_precioCompra" @bind:event="oninput" autocomplete="off" />
+                <InputPrecio Id="pPrecioC" @bind-Value="_precioCompra" />
             </div>
 
             <div class="campo-form">
                 <label for="pPrecioV">Precio venta *</label>
-                <input id="pPrecioV" inputmode="decimal" @bind="_precioVenta" @bind:event="oninput" autocomplete="off" />
+                <InputPrecio Id="pPrecioV"  @bind-Value="_precioVenta" />
             </div>
 
             <div class="campo-form">
@@ -97,13 +98,15 @@
     public record Resultado(int IdProducto, int Cantidad, bool EsAlta);
     [Parameter] public EventCallback OnCancelar { get; set; }
 
+    private static readonly CultureInfo Co = new("es-CO");
+    private const string Fmt = "#,##0.##";
+
     private bool EsEdicion => IdProducto > 0;
 
     private string _codigoBarras = string.Empty;
     private string _nombre = string.Empty;
     private string _descripcion = string.Empty;
-    private string _precioCompra = string.Empty;
-    private string _precioVenta = string.Empty;
+    private decimal _precioCompra, _precioVenta;
     private string _stock = string.Empty;
     private int? _idProveedor;
 
@@ -135,8 +138,8 @@
                 _codigoBarras = p.CodigoBarras ?? string.Empty;
                 _nombre = p.Nombre;
                 _descripcion = p.Descripcion ?? string.Empty;
-                _precioCompra = p.PrecioCompra.ToString("0.##");
-                _precioVenta = p.PrecioVenta.ToString("0.##");
+                _precioCompra = p.PrecioCompra;
+                _precioVenta = p.PrecioVenta;
                 _stock = p.Stock.ToString();
                 if (p.IdProveedor is not null) _idProveedor = p.IdProveedor;
             }
@@ -190,8 +193,8 @@
                 IdProducto = IdProducto,
                 Nombre = _nombre.Trim(),
                 Descripcion = string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim(),
-                PrecioCompra = FormatosTexto.ParseDecimal(_precioCompra.Trim()),
-                PrecioVenta = FormatosTexto.ParseDecimal(_precioVenta.Trim()),
+                PrecioCompra = FormatosTexto.ParseDecimal(ReemplazarFormatoDecimal(_precioCompra.ToString())),
+                PrecioVenta = FormatosTexto.ParseDecimal(ReemplazarFormatoDecimal(_precioVenta.ToString())),
                 Stock = esAltaDesdeCompra ? 0 : cantidad,
                 IdProveedor = _idProveedor,
                 CodigoBarras = string.IsNullOrWhiteSpace(_codigoBarras) ? null : _codigoBarras.Trim()
@@ -228,8 +231,8 @@
     private async Task<string?> ValidarAsync()
     {
         var nombre = _nombre.Trim();
-        var precioC = _precioCompra.Trim();
-        var precioV = _precioVenta.Trim();
+        var precioC = ReemplazarFormatoDecimal(_precioCompra.ToString());
+        var precioV = ReemplazarFormatoDecimal(_precioVenta.ToString());
         var stock = _stock.Trim();
 
         // En ModoCompra el campo se rotula "Cantidad a comprar"; los mensajes
@@ -265,6 +268,7 @@
 
         return null;
     }
+    private string ReemplazarFormatoDecimal(string valor) => valor.Replace(".","").Replace(",","");
 
     private Task Cancelar() => OnCancelar.InvokeAsync();
 

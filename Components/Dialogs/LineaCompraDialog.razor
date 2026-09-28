@@ -23,7 +23,7 @@
             </div>
             <div class="campo-form">
                 <label for="lcPrecio">Precio unitario</label>
-                <input id="lcPrecio" inputmode="numeric" @bind="_precio" @bind:event="oninput" autocomplete="off" />
+                <InputPrecio Id="lcPrecio" @bind-value="_precio" />
             </div>
         </div>
 
@@ -46,17 +46,16 @@
     [Parameter] public EventCallback OnCancelar { get; set; }
 
     private string _cantidad = "1";
-    private string _precio = string.Empty;
+    private decimal _precio = 0m;
     private string? _error;
 
     private decimal Subtotal =>
-        int.TryParse(_cantidad, out var c) && decimal.TryParse(_precio, out var p) ? c * p : 0m;
+        int.TryParse(_cantidad, out var c) && decimal.TryParse(_precio.ToString(), out var p) ? c * p : 0m;
 
     protected override void OnParametersSet()
     {
         _cantidad = "1";
-        // El desktop sugiere la parte entera del precio de compra actual.
-        _precio = decimal.Truncate(PrecioSugerido).ToString("0");
+        _precio = PrecioSugerido;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -73,7 +72,7 @@
         _error = null;
 
         var cantidad = _cantidad.Trim();
-        var precio = _precio.Trim();
+        var precio = _precio.ToString();
 
         // El desktop valida ambos con Utils.IsNumber, que solo acepta enteros:
         // en compras no se pueden digitar centavos. Se mantiene igual.

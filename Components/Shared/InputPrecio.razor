@@ -1,0 +1,59 @@
+﻿@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<input @ref="_input" id="@Id" class="@Class" inputmode="decimal" autocomplete="off" />
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public int Decimales { get; set; } = 2;
+    [Parameter] public decimal Value { get; set; }
+    [Parameter] public EventCallback<decimal> ValueChanged { get; set; }
+
+    private ElementReference _input;
+    private IJSObjectReference? _mod;
+    private DotNetObjectReference<InputPrecio>? _ref;
+    private decimal _ultimo;
+    private bool _listo;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _mod = await JS.InvokeAsync<IJSObjectReference>("import", "./js/inputPrecio.js");
+            _ref = DotNetObjectReference.Create(this);
+            await _mod.InvokeVoidAsync("attach", _input, _ref, Decimales, Value);
+            _ultimo = Value;
+            _listo = true;
+        }
+        else if (_listo && Value != _ultimo)
+        {
+            // el padre cambió el valor (por ejemplo, al cargar un producto)
+            _ultimo = Value;
+            await _mod!.InvokeVoidAsync("setValue", _input, Value, Decimales);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnValor(decimal v)
+    {
+        _ultimo = v;
+        Value = v;
+        await ValueChanged.InvokeAsync(v);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_mod is not null)
+            {
+                await _mod.InvokeVoidAsync("detach", _input);
+                await _mod.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException) { }
+
+        _ref?.Dispose();
+    }
+}

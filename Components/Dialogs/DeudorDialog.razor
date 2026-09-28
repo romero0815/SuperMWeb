@@ -73,7 +73,7 @@
             <div class="form-rejilla">
                 <div class="campo-form">
                     <label for="dValor">Valor</label>
-                    <input id="dValor" inputmode="decimal" @bind="_valorDeuda" @bind:event="oninput" autocomplete="off" />
+                    <InputPrecio Id="dValor" @bind-value="_valorDeuda" />
                 </div>
                 <div class="campo-form">
                     <label for="dDesc">Descripcion</label>
@@ -105,7 +105,7 @@
     private string _direccion = string.Empty;
     private string _cupoMaximo = string.Empty;
     private string _observaciones = string.Empty;
-    private string _valorDeuda = string.Empty;
+    private decimal _valorDeuda = 0m;
     private string _descripcionDeuda = string.Empty;
 
     private decimal _saldoActual;
@@ -157,9 +157,9 @@
         }
 
         var cupo = LeerCupo();
-        var valor = string.IsNullOrWhiteSpace(_valorDeuda)
+        var valor = string.IsNullOrWhiteSpace(_valorDeuda.ToString())
             ? 0m
-            : FormatosTexto.ParseValorMoneda(_valorDeuda.Trim());
+            : FormatosTexto.ParseValorMoneda(_valorDeuda.ToString());
 
         // El desktop pide confirmacion cuando la nueva deuda deja el saldo
         // por encima del cupo asignado.
@@ -191,9 +191,9 @@
                 Observaciones = _observaciones.Trim()
             };
 
-            var valor = string.IsNullOrWhiteSpace(_valorDeuda)
+            var valor = string.IsNullOrWhiteSpace(_valorDeuda.ToString())
                 ? 0m
-                : FormatosTexto.ParseValorMoneda(_valorDeuda.Trim());
+                : FormatosTexto.ParseValorMoneda(_valorDeuda.ToString());
 
             if (EsEdicion)
             {
@@ -229,7 +229,7 @@
         var identificacion = _identificacion.Trim();
         var telefono = _telefono.Trim();
         var cupo = _cupoMaximo.Trim();
-        var valorDeuda = _valorDeuda.Trim();
+        var valorDeuda = _valorDeuda.ToString();
 
         if (nombre.Length == 0) return "El nombre del cliente es obligatorio.";
 
