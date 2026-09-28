@@ -243,6 +243,7 @@
         <!-- Stock minimo -->
         <section class="panel">
             <h2>Productos con stock bajo (5 o menos)</h2>
+            <span class="nota">Esta sección muestra los productos que tienen un stock por debajo del nivel mínimo establecido en los últimos 3 meses teniendo en cuenta su actividad en ventas.</span>
             <div class="tabla-scroll">
                 <table class="tabla">
                     <thead>
@@ -255,7 +256,7 @@
                     <tbody>
                         @if (_stockBajo.Count == 0)
                         {
-                            <tr><td colspan="2" class="vacio-fila">Ningun producto por debajo del minimo.</td></tr>
+                            <tr><td colspan="3" class="vacio-fila">Ningun producto por debajo del minimo.</td></tr>
                         }
                         else
                         {
@@ -280,6 +281,49 @@
                        OnCambiarTamano="CambiarTamanoStockBajo" />
         </section>
     </div>
+    <div class="regilla-2">
+        <section class="panel">
+            <h2>Productos con poca actividad</h2>
+            <span class="nota">Productos activos con poca rotación: su última venta fue hace entre 3 y 12 meses, o nunca se han vendido. Revísalos para decidir si se mantienen (por ejemplo, productos de temporada) o se desactivan.</span>
+            <div class="tabla-scroll">
+                <table class="tabla">
+                    <thead>
+                        <tr>
+                            <th>Codigo Barras</th>
+                            <th>Producto</th>
+                            <th>Fecha última venta</th>
+                            <th class="numero">Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_stockBajoHistorico.Count == 0)
+                        {
+                            <tr><td colspan="4" class="vacio-fila">Ningun producto por debajo del minimo.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var p in _paginaProductosStockBajoHistorico)
+                            {
+                                <tr>
+                                    <td>@(!string.IsNullOrEmpty(p.CodigoBarras) ? p.CodigoBarras : "N/A")</td>
+                                    <td>@p.Nombre</td>
+                                    <td>@p.ultimaVenta</td>
+                                    <td class="numero"><span class="stock-pill bajo">@p.Stock</span></td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <Paginador TotalFilas="_stockBajoHistorico.Count"
+                       Pagina="_paginaStockBajoActualHistorico"
+                       TamanoPagina="_tamanoStockBajoHistorico"
+                       Tamanos="@(new[] { 10, 20, 50 })"
+                       OnCambiarPagina="(int p) => _paginaStockBajoActualHistorico = p"
+                       OnCambiarTamano="CambiarTamanoStockBajoHistorico" />
+        </section>
+    </div>
 </div>
 
 @if (_documentoAbierto is not null)
@@ -293,6 +337,7 @@
     private ResumenInventario _inventario = new(0, 0, 0m, 0m);
     private IReadOnlyList<ProductoMasVendido> _masVendidos = Array.Empty<ProductoMasVendido>();
     private IReadOnlyList<ProductoStockBajo> _stockBajo = Array.Empty<ProductoStockBajo>();
+    private IReadOnlyList<ProductoStockBajo> _stockBajoHistorico = Array.Empty<ProductoStockBajo>();
     private IReadOnlyList<ResumenVenta> _ventas = Array.Empty<ResumenVenta>();
     private IReadOnlyList<ResumenCompra> _compras = Array.Empty<ResumenCompra>();
 
@@ -309,7 +354,9 @@
     private int _tamanoCompras = 10;
 
     private int _paginaStockBajoActual = 1;
+    private int _paginaStockBajoActualHistorico = 1;
     private int _tamanoStockBajo = 10;
+    private int _tamanoStockBajoHistorico = 10;
 
     // Los totales del pie siguen sumando TODO el periodo, no solo la pagina.
     private IEnumerable<ResumenVenta> _paginaVentas =>
@@ -320,6 +367,9 @@
 
     private IEnumerable<ProductoStockBajo> _paginaProductosStockBajo =>
         _stockBajo.Skip((_paginaStockBajoActual - 1) * _tamanoStockBajo).Take(_tamanoStockBajo);
+
+    private IEnumerable<ProductoStockBajo> _paginaProductosStockBajoHistorico =>
+        _stockBajoHistorico.Skip((_paginaStockBajoActualHistorico - 1) * _tamanoStockBajoHistorico).Take(_tamanoStockBajoHistorico);
 
     private (int Id, bool EsCompra)? _documentoAbierto;
     private string? _error;
@@ -339,6 +389,7 @@
             _inventario = await ReportesRepo.ObtenerResumenInventarioAsync();
             _masVendidos = await ReportesRepo.ListarMasVendidosDelMesAsync();
             await CargarProductosStockBajo();
+            await CargarProductosStockBajoHistorico();
             await CargarVentas();
             await CargarCompras();
         }
@@ -392,6 +443,20 @@
         }
     }
 
+    private async Task CargarProductosStockBajoHistorico()
+    {
+        try
+        {
+            _stockBajoHistorico = await ReportesRepo.ListarStockBajoHistoricoAsync();
+            _paginaStockBajoActualHistorico = 1;
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudieron cargar los productos con stock bajo: {ex.Message}";
+            _stockBajoHistorico = Array.Empty<ProductoStockBajo>();
+        }
+    }
+
     private async Task CargarCompras()
     {
         try
@@ -428,6 +493,13 @@
         _tamanoStockBajo = tamano;
         var total = Math.Max(1, (int)Math.Ceiling(_stockBajo.Count / (double)_tamanoStockBajo));
         if (_paginaStockBajoActual > total) _paginaStockBajoActual = total;
+    }
+
+    private void CambiarTamanoStockBajoHistorico(int tamano)
+    {
+        _tamanoStockBajoHistorico = tamano;
+        var total = Math.Max(1, (int)Math.Ceiling(_stockBajoHistorico.Count / (double)_tamanoStockBajoHistorico));
+        if (_paginaStockBajoActualHistorico > total) _paginaStockBajoActualHistorico = total;
     }
 
     private void VerDocumento(int id, bool esCompra) => _documentoAbierto = (id, esCompra);

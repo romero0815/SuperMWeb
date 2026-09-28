@@ -16,8 +16,11 @@ public interface IReportesRepository
     // TOP 10 por unidades vendidas en el mes calendario en curso.
     Task<IReadOnlyList<ProductoMasVendido>> ListarMasVendidosDelMesAsync(CancellationToken ct = default);
 
-    // TOP 50 productos activos con Stock <= 5, ascendente.
+    // TOP 150 productos activos con Stock <= 5, ascendente.
     Task<IReadOnlyList<ProductoStockBajo>> ListarStockBajoAsync(CancellationToken ct = default);
+
+    // TOP 150 productos activos con Stock <= 5 historicos sin importar su historial de ventas.
+    Task<IReadOnlyList<ProductoStockBajo>> ListarStockBajoHistoricoAsync(CancellationToken ct = default);
 
     // --- Ventas ---
 

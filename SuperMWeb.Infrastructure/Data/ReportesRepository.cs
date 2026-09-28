@@ -76,7 +76,29 @@ public sealed class ReportesRepository : IReportesRepository
             ORDER BY p.Stock ASC";
 
         return LeerListaAsync(sql, null, ct,
-            r => new ProductoStockBajo(r.IsDBNull(0) ? string.Empty : r.GetString(0), r.GetString(1), r.GetInt32(2)));
+            r => new ProductoStockBajo(r.IsDBNull(0) ? string.Empty : r.GetString(0), r.GetString(1), r.GetInt32(2),string.Empty));
+    }
+
+    public Task<IReadOnlyList<ProductoStockBajo>> ListarStockBajoHistoricoAsync(CancellationToken ct = default)
+    {
+        const string sql = @"
+            SELECT 
+                p.CodigoBarras,
+                p.Nombre, 
+                p.Stock,
+                MAX(f.Fecha) AS UltimaVenta
+            FROM Productos p
+            LEFT JOIN DetalleFacturas df ON df.IdProducto = p.IdProducto
+            LEFT JOIN Facturas f ON df.IdFactura = f.IdFactura
+            WHERE p.Active = 1
+            GROUP BY p.IdProducto, p.Nombre, p.Stock, p.CodigoBarras
+            HAVING (MAX(f.Fecha) < DATEADD(MONTH, -3, GETDATE()) and MAX(f.Fecha) >= DATEADD(MONTH, -12, GETDATE()))
+                OR MAX(f.Fecha) IS NULL
+            ORDER BY UltimaVenta ASC";
+
+        return LeerListaAsync(sql, null, ct,
+            r => new ProductoStockBajo(r.IsDBNull(0) ? string.Empty : r.GetString(0), r.GetString(1), r.GetInt32(2),
+            r.IsDBNull(3) ? "Sin Venta" : r.GetDateTime(3).ToString("dd-MM-yyyy")));
     }
 
     // ---------- Ventas ----------
