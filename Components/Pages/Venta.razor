@@ -70,7 +70,7 @@
                         @foreach (var p in _paginaCatalogo)
                         {
                             <tr>
-                                <td style="font-weight:600;">@p.Nombre</td>
+                                <td style="font-weight:600;">@p.Nombre.ToUpper()</td>
                                 <td>@p.Descripcion</td>
                                 <td class="numero">@p.PrecioVenta.ToString("C0")</td>
                                 <td class="numero"><span class="stock-pill @ClaseStock(p.Stock)">@p.Stock</span></td>
@@ -104,32 +104,34 @@
         }
         else
         {
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width:8%">#</th>
-                        <th>Producto</th>
-                        <th class="numero" style="width:10%">Cant</th>
-                        <th class="numero" style="width:18%">V. Unit</th>
-                        <th class="numero" style="width:20%">Subtotal</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @for (var i = 0; i < State.Items.Count; i++)
-                    {
-                        var idx = i;
-                        var l = State.Items[i];
-                        var cls = idx == _seleccionada ? "seleccionada" : null;
-                        <tr class="@cls" @onclick="() => Seleccionar(idx)">
-                            <td>@(idx + 1)</td>
-                            <td style="font-weight:600;">@l.Nombre</td>
-                            <td class="numero">@l.Cantidad</td>
-                            <td class="numero">@l.PrecioUnitario.ToString("C0")</td>
-                            <td class="numero">@l.Subtotal.ToString("C0")</td>
+            <div class="tabla-scroll catalogo-tabla">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:8%">#</th>
+                            <th>Producto</th>
+                            <th class="numero" style="width:10%">Cant</th>
+                            <th class="numero" style="width:18%">V. Unit</th>
+                            <th class="numero" style="width:20%">Subtotal</th>
                         </tr>
-                    }
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        @for (var i = 0; i < State.Items.Count; i++)
+                        {
+                            var idx = i;
+                            var l = State.Items[i];
+                            var cls = idx == _seleccionada ? "seleccionada" : null;
+                            <tr class="@cls" @onclick="() => Seleccionar(idx)">
+                                <td>@(idx + 1)</td>
+                                    <td style="font-weight:600;">@l.Nombre.ToUpper()</td>
+                                <td class="numero">@l.Cantidad</td>
+                                <td class="numero">@l.PrecioUnitario.ToString("C0")</td>
+                                <td class="numero">@l.Subtotal.ToString("C0")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
         }
     </section>
   </div>

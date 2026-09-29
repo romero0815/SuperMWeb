@@ -14,24 +14,35 @@
     private IJSObjectReference? _mod;
     private DotNetObjectReference<InputPrecio>? _ref;
     private decimal _ultimo;
-    private bool _listo;
+    private Task? _initTask;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            _mod = await JS.InvokeAsync<IJSObjectReference>("import", "./js/inputPrecio.js");
-            _ref = DotNetObjectReference.Create(this);
-            await _mod.InvokeVoidAsync("attach", _input, _ref, Decimales, Value);
-            _ultimo = Value;
-            _listo = true;
+            _initTask = InicializarAsync();
+            await _initTask;
         }
-        else if (_listo && Value != _ultimo)
+        else
         {
-            // el padre cambió el valor (por ejemplo, al cargar un producto)
-            _ultimo = Value;
-            await _mod!.InvokeVoidAsync("setValue", _input, Value, Decimales);
+            if (_initTask is not null)
+                await _initTask;
+
+            if (Value != _ultimo)
+            {
+                _ultimo = Value;
+                await _mod!.InvokeVoidAsync("setValue", _input, Value, Decimales);
+            }
         }
+    }
+
+    private async Task InicializarAsync()
+    {
+        _mod = await JS.InvokeAsync<IJSObjectReference>("import", "./js/inputPrecio.js");
+        _ref = DotNetObjectReference.Create(this);
+
+        _ultimo = Value;
+        await _mod.InvokeVoidAsync("attach", _input, _ref, Decimales, Value);
     }
 
     [JSInvokable]
