@@ -193,8 +193,8 @@
                 IdProducto = IdProducto,
                 Nombre = _nombre.Trim(),
                 Descripcion = string.IsNullOrWhiteSpace(_descripcion) ? null : _descripcion.Trim(),
-                PrecioCompra = FormatosTexto.ParseDecimal(ReemplazarFormatoDecimal(_precioCompra.ToString())),
-                PrecioVenta = FormatosTexto.ParseDecimal(ReemplazarFormatoDecimal(_precioVenta.ToString())),
+                PrecioCompra = _precioCompra,
+                PrecioVenta = _precioVenta,
                 Stock = esAltaDesdeCompra ? 0 : cantidad,
                 IdProveedor = _idProveedor,
                 CodigoBarras = string.IsNullOrWhiteSpace(_codigoBarras) ? null : _codigoBarras.Trim()
@@ -231,8 +231,8 @@
     private async Task<string?> ValidarAsync()
     {
         var nombre = _nombre.Trim();
-        var precioC = ReemplazarFormatoDecimal(_precioCompra.ToString());
-        var precioV = ReemplazarFormatoDecimal(_precioVenta.ToString());
+        var precioC = _precioCompra.ToString();
+        var precioV = _precioVenta.ToString();
         var stock = _stock.Trim();
 
         // En ModoCompra el campo se rotula "Cantidad a comprar"; los mensajes
@@ -268,7 +268,6 @@
 
         return null;
     }
-    private string ReemplazarFormatoDecimal(string valor) => valor.Replace(".","").Replace(",","");
 
     private Task Cancelar() => OnCancelar.InvokeAsync();
 
