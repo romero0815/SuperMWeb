@@ -479,6 +479,15 @@ h1:focus { outline: none; }
     margin-right: 0.35rem;
 }
 
+.btn-encolar kbd {
+    background: #85848475;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9rem;
+    margin-right: 0.35rem;
+}
+
 .btn-fiar kbd {
     background: #dda84b75;
     padding: 0.15rem 0.4rem;
@@ -487,6 +496,7 @@ h1:focus { outline: none; }
     font-size: 0.9rem;
     margin-right: 0.35rem;
 }
+
 .btn-cancelar kbd {
     background: #f567673d;
     padding: 0.15rem 0.4rem;
@@ -511,6 +521,7 @@ h1:focus { outline: none; }
 
 /* Con el boton deshabilitado la tecla de atajo tambien va en gris. */
 .btn-cobrar:disabled kbd,
+.btn-encolar:disabled kbd,
 .btn-fiar:disabled kbd {
     background: #b8c4ca;
     color: #eef2f4;
@@ -1334,6 +1345,29 @@ a.btn { text-decoration: none; display: inline-block; line-height: normal; }
     background: #cfd8dc;
     color: #90a4ae;
     cursor: not-allowed;
+}
+
+.venta-totales .btn-encolar {
+    padding: 0.8rem;
+    font-size: 1rem;
+    font-weight: 700;
+    background: transparent;
+    color: black;
+    border: 1px solid black;
+    border-radius: 8px;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+}
+
+.venta-totales .btn-encolar:hover:enabled {
+    background: #b8b8b875;
+}
+
+.venta-totales .btn-encolar:disabled {
+    background: #cfd8dc;
+    color: #90a4ae;
+    cursor: not-allowed;
+    border:none;
 }
 
 /* Campo de contrasena con boton de ver/ocultar */

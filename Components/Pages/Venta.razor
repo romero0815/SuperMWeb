@@ -173,6 +173,21 @@
         <button class="btn-cobrar" disabled="@(State.Items.Count == 0)" @onclick="AbrirCobro">
             COBRAR <kbd>F10</kbd>
         </button>
+        @if (State.HayVentaEnCola)
+        {
+            <button class="btn-encolar" @onclick="AlternarVentaEncolada">
+                @(State.Items.Count == 0 ? "Retomar venta encolada" : "Cambiar a venta encolada")
+                (@State.ItemsEnCola.Count item(s) - @State.TotalEnCola.ToString("C0"))
+                <kbd>F4</kbd>
+            </button>
+        }
+        else
+        {
+            <button class="btn-encolar" disabled="@(State.Items.Count == 0)" @onclick="EncolarVenta">
+                Encolar venta
+                <kbd>F4</kbd>
+            </button>
+        }
         <button class="btn-fiar" disabled="@(State.Items.Count == 0)" @onclick="AbrirFiar">
             Fiar venta <kbd>F8</kbd>
         </button>
@@ -184,6 +199,7 @@
     <div class="venta-atajos">
         <span><kbd>Escanear</kbd> agrega al detalle</span>
         <span><kbd>F2</kbd> cambiar cantidad</span>
+        <span><kbd>F4</kbd> Encolar / regresar venta</span>
         <span><kbd>Supr</kbd> eliminar linea seleccionada</span>
         <span><kbd>F8</kbd> fiar</span>
         <span><kbd>F10</kbd> cobrar</span>
@@ -227,7 +243,7 @@
 @if (_sinStock is not null)
 {
     <ConfirmDialog Titulo="Sin stock"
-                   Mensaje="@($"No hay suficiente stock de \"{_sinStock.Nombre}\" (stock actual {_sinStock.Stock}). ¿Desea actualizarlo?")"
+                   Mensaje="@MensajeSinStock"
                    OnAceptar="AbrirActualizarProducto"
                    OnCancelar="RechazarActualizarProducto" />
 }
@@ -451,10 +467,10 @@
         try { stockActual = await ProductosRepo.ObtenerStockAsync(idProducto); }
         catch { stockActual = stockConocido ?? 0; }
 
-        if (stockActual < cantidadEnVenta + 1)
+        var enCola = State.CantidadEnCola(idProducto);
+        if (stockActual - enCola < cantidadEnVenta + 1)
         {
-            // Como VentasForm: antes de rechazar se ofrece actualizar el producto.
-            _sinStock = new SinStock(idProducto, nombre, stockActual);
+            _sinStock = new SinStock(idProducto, nombre, stockActual, enCola);
             await Ui.BeepAsync(220, 250);
             return;
         }
@@ -503,6 +519,12 @@
             case "F2":
                 if (_seleccionada >= 0) _mostrarCantidad = true;
                 break;
+            case "F4":
+                if (State.HayVentaEnCola)
+                    await AlternarVentaEncolada();
+                else
+                    await EncolarVenta();
+                break;
             case "Delete":
                 if (_seleccionada >= 0)
                 {
@@ -543,7 +565,7 @@
         State.Reiniciar();
         _seleccionada = -1;
         _recibidoTexto = string.Empty;
-        await State.LimpiarStorageAsync(JS);
+        //await State.LimpiarStorageAsync(JS);
         await CargarCatalogo();
     }
 
@@ -558,12 +580,6 @@
 
     private void AbrirFiar() { if (State.Items.Count > 0) _mostrarFiar = true; }
 
-    private Task AplicarNuevaCantidad(int nueva)
-    {
-        State.CambiarCantidad(_seleccionada, nueva);
-        _mostrarCantidad = false;
-        return Task.CompletedTask;
-    }
 
     // Mensaje de la confirmacion: recuerda el total y, si el cajero ya digito
     // el dinero recibido, tambien el cambio que debe entregar.
@@ -708,7 +724,7 @@
         await MostrarFeedback("exito", $"Producto actualizado (stock {r.Cantidad}). Vuelve a agregarlo a la venta.");
     }
 
-    private record SinStock(int IdProducto, string Nombre, int Stock);
+    private record SinStock(int IdProducto, string Nombre, int Stock, int EnCola);
 
     private record ImpresionPendiente(IReadOnlyList<LineaTicket> Items, decimal Total);
 
@@ -742,4 +758,63 @@
     }
 
     private record FeedbackMsg(string Tipo, string Mensaje);
+
+    
+    private async Task EncolarVenta()
+    {
+        if (!State.Encolar()) return;
+        _seleccionada = -1;
+        _recibidoTexto = string.Empty;
+        await MostrarFeedback("info", "Venta encolada. Cuando termines con el otro cliente, retomala con el mismo boton.");
+    }
+
+    private async Task AlternarVentaEncolada()
+    {
+        if (!State.HayVentaEnCola) return;
+        var habiaActiva = State.Items.Count > 0;
+        State.IntercambiarConCola();
+        _seleccionada = -1;
+        _recibidoTexto = string.Empty;
+        await MostrarFeedback("info", habiaActiva ? "Ventas intercambiadas." : "Venta encolada retomada.");
+    }
+
+
+
+private string MensajeSinStock => _sinStock is null ? "" :
+    _sinStock.EnCola > 0
+        ? $"No hay suficiente stock de \"{_sinStock.Nombre}\" (stock actual {_sinStock.Stock}, {_sinStock.EnCola} ya estan en la venta encolada). ¿Desea actualizarlo?"
+        : $"No hay suficiente stock de \"{_sinStock.Nombre}\" (stock actual {_sinStock.Stock}). ¿Desea actualizarlo?";
+
+// F2 (cambiar cantidad) ahora valida stock:
+private async Task AplicarNuevaCantidad(int nueva)
+{
+    _mostrarCantidad = false;
+    if (_seleccionada < 0 || _seleccionada >= State.Items.Count) return;
+
+    var linea = State.Items[_seleccionada];
+    if (nueva > linea.Cantidad)
+    {
+        int stockActual;
+        try { stockActual = await ProductosRepo.ObtenerStockAsync(linea.IdProducto); }
+        catch (Exception ex)
+        {
+            await MostrarFeedback("error", $"No se pudo verificar el stock: {ex.Message}");
+            return;
+        }
+
+        var otrasLineas = State.Items
+            .Where((l, i) => i != _seleccionada && l.IdProducto == linea.IdProducto)
+            .Sum(l => l.Cantidad);
+        var enCola = State.CantidadEnCola(linea.IdProducto);
+
+        if (otrasLineas + nueva + enCola > stockActual)
+        {
+            await Ui.BeepAsync(220, 250);
+            await MostrarFeedback("error",
+                $"Stock insuficiente de {linea.Nombre} (stock {stockActual}, {enCola} en la venta encolada).");
+            return;
+        }
+    }
+    State.CambiarCantidad(_seleccionada, nueva);
+}
 }
